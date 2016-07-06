@@ -382,15 +382,18 @@ func (p *peripheral) loop() {
 				if req.rspc == nil {
 					break
 				}
-				r := <-rspc
-				switch reqOp, rspOp := req.b[0], r[0]; {
-				case rspOp == attRspFor[reqOp]:
-				case rspOp == attOpError && r[1] == reqOp:
-				default:
+
+				for {
+					r := <-rspc
+					reqOp, rspOp := req.b[0], r[0]
+					if rspOp == attRspFor[reqOp] || (rspOp == attOpError && r[1] == reqOp) {
+						req.rspc <- r
+						break
+
+					}
 					log.Printf("Request 0x%02x got a mismatched response: 0x%02x", reqOp, rspOp)
-					// FIXME: terminate the connection?
+					p.l2c.Write(attErrorRsp(rspOp, 0x0000, attEcodeReqNotSupp))
 				}
-				req.rspc <- r
 			case <-p.quitc:
 				return
 			}
