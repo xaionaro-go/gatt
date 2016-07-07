@@ -392,7 +392,7 @@ func (h *HCI) handleL2CAP(b []byte) error {
 		return nil
 	}
 	if len(a.b) < 4 {
-		log.Printf("l2conn: l2cap packet is too short/corrupt, length is %d", len(a.b))
+		log.Printf("l2conn: short/corrupt packet, %v [% X]", a, a.b)
 		return nil
 	}
 	cid := uint16(a.b[2]) | (uint16(a.b[3]) << 8)
@@ -402,8 +402,4 @@ func (h *HCI) handleL2CAP(b []byte) error {
 	}
 	c.aclc <- a
 	return nil
-}
-
-func (h *HCI) trace(fmt string, v ...interface{}) {
-	log.Printf(fmt, v)
 }
