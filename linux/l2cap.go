@@ -176,7 +176,6 @@ func (c *conn) handleSignal(a *aclData) error {
 		rsp = []byte{
 			0x01,       // Code: Command Reject
 			a.b[1],     // ID
-			0x02, 0x00, // Length: 2 bytes of Resdon, and no Data field.
 			0x00, 0x00, // Reason: Command not understood
 		}
 	}
