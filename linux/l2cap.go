@@ -3,6 +3,7 @@ package linux
 import (
 	"fmt"
 	"io"
+	"log"
 
 	"github.com/currantlabs/gatt/linux/cmd"
 )
@@ -30,16 +31,50 @@ func (a *aclData) unmarshal(b []byte) error {
 }
 
 type conn struct {
-	hci  *HCI
-	attr uint16
-	aclc chan *aclData
+	hci   *HCI
+	attr  uint16
+	aclc  chan *aclData
+	datac chan []byte
 }
 
 func newConn(hci *HCI, hh uint16) *conn {
-	return &conn{
-		hci:  hci,
-		attr: hh,
-		aclc: make(chan *aclData),
+	c := &conn{
+		hci:   hci,
+		attr:  hh,
+		aclc:  make(chan *aclData),
+		datac: make(chan []byte, 32),
+	}
+	go c.loop()
+	return c
+}
+
+func (c *conn) loop() {
+	defer close(c.datac)
+	for a := range c.aclc {
+		if len(a.b) < 4 {
+			log.Printf("l2conn: short/corrupt packet, %v [% X]", a, a.b)
+			return
+		}
+		cid := uint16(a.b[2]) | (uint16(a.b[3]) << 8)
+		if cid == 5 {
+			c.handleSignal(a)
+			continue
+		}
+		b := make([]byte, 512)
+		tlen := int(uint16(a.b[0]) | uint16(a.b[1])<<8)
+		d := a.b[4:] // skip l2cap header
+		copy(b, d)
+		n := len(d)
+
+		// Keep receiving and reassemble continued l2cap segments
+		for n != tlen {
+			a, ok := <-c.aclc
+			if !ok || (a.flags&0x1) == 0 {
+				return
+			}
+			n += copy(b[n:], a.b)
+		}
+		c.datac <- b[:n]
 	}
 }
 
@@ -97,27 +132,15 @@ func (c *conn) write(cid int, b []byte) (int, error) {
 }
 
 func (c *conn) Read(b []byte) (int, error) {
-	a, ok := <-c.aclc
+	d, ok := <-c.datac
 	if !ok {
 		return 0, io.EOF
 	}
-	tlen := int(uint16(a.b[0]) | uint16(a.b[1])<<8)
-	if tlen > len(b) {
-		return 0, io.ErrShortBuffer
+	if len(d) > len(b) {
+		return copy(b, d), io.ErrShortBuffer
 	}
-	d := a.b[4:] // skip l2cap header
-	copy(b, d)
-	n := len(d)
-
-	// Keep receiving and reassemble continued l2cap segments
-	for n != tlen {
-		if a, ok = <-c.aclc; !ok || (a.flags&0x1) == 0 {
-			return n, io.ErrUnexpectedEOF
-		}
-		copy(b[n:], a.b)
-		n += len(a.b)
-	}
-	logger.Info("l2cap", "R", fmt.Sprintf("[% X]", b[:n]))
+	logger.Info("l2cap", "R", fmt.Sprintf("[% X]", d))
+	n := copy(b, d)
 	return n, nil
 }
 

@@ -391,15 +391,6 @@ func (h *HCI) handleL2CAP(b []byte) error {
 		log.Printf("l2conn: got data for disconnected handle: 0x%04x", a.attr)
 		return nil
 	}
-	if len(a.b) < 4 {
-		log.Printf("l2conn: short/corrupt packet, %v [% X]", a, a.b)
-		return nil
-	}
-	cid := uint16(a.b[2]) | (uint16(a.b[3]) << 8)
-	if cid == 5 {
-		c.handleSignal(a)
-		return nil
-	}
 	c.aclc <- a
 	return nil
 }
