@@ -167,18 +167,7 @@ func (c *conn) Close() error {
 // 0x15 LE Credit Based Connection response		0x0005
 // 0x16 LE Flow Control Credit					0x0005
 func (c *conn) handleSignal(a *aclData) error {
-	var rsp []byte
-	code := a.b[0]
+	log.Printf("ignore l2cap signal:[ % X ]", a.b)
 	// FIXME: handle LE signaling channel (CID: 5)
-	switch code {
-	default:
-		logger.Info("l2cap", "reject signal", fmt.Sprintf("[% X]", a.b))
-		rsp = []byte{
-			0x01,       // Code: Command Reject
-			a.b[1],     // ID
-			0x00, 0x00, // Reason: Command not understood
-		}
-	}
-	c.write(0x05, rsp)
 	return nil
 }
