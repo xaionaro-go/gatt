@@ -6,9 +6,9 @@ import (
 	"log"
 	"sync"
 
-	"github.com/currantlabs/gatt/linux/cmd"
-	"github.com/currantlabs/gatt/linux/evt"
-	"github.com/currantlabs/gatt/linux/util"
+	"github.com/cksmith/gatt/linux/cmd"
+	"github.com/cksmith/gatt/linux/evt"
+	"github.com/cksmith/gatt/linux/util"
 )
 
 type HCI struct {
@@ -375,7 +375,7 @@ func (h *HCI) handleLTKRequest(b []byte) {
 		log.Printf("ltkrequest: error, connection 0x%04X probably expired", hh)
 		return
 	}
-	h.c.Send(cmd.LELTKNegReply{ ConnectionHandle: hh })
+	h.c.Send(cmd.LELTKNegReply{ConnectionHandle: hh})
 	// TODO: implement proper key management
 }
 

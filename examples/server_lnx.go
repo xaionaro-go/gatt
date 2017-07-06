@@ -9,9 +9,9 @@ import (
 	"log"
 	"time"
 
-	"github.com/currantlabs/gatt"
-	"github.com/currantlabs/gatt/examples/service"
-	"github.com/currantlabs/gatt/linux/cmd"
+	"github.com/cksmith/gatt"
+	"github.com/cksmith/gatt/examples/service"
+	"github.com/cksmith/gatt/linux/cmd"
 )
 
 // server_lnx implements a GATT server.
