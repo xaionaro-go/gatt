@@ -252,6 +252,10 @@ func (c *Characteristic) HandleReadFunc(f func(rsp ResponseWriter, req *ReadRequ
 	c.HandleRead(ReadHandlerFunc(f))
 }
 
+func (c *Characteristic) GetReadHandler() ReadHandler {
+	return c.rhandler
+}
+
 // HandleWrite makes the characteristic support write and write-no-response
 // requests, and routes write requests to h.
 // The WriteHandler does not differentiate between write and write-no-response
@@ -266,6 +270,10 @@ func (c *Characteristic) HandleWrite(h WriteHandler) {
 // HandleWriteFunc calls HandleWrite(WriteHandlerFunc(f)).
 func (c *Characteristic) HandleWriteFunc(f func(r Request, data []byte) (status byte)) {
 	c.HandleWrite(WriteHandlerFunc(f))
+}
+
+func (c *Characteristic) GetWriteHandler() WriteHandler {
+	return c.whandler
 }
 
 // HandleNotify makes the characteristic support notify requests, and routes
@@ -302,6 +310,10 @@ func (c *Characteristic) HandleNotify(h NotifyHandler) {
 // HandleNotifyFunc calls HandleNotify(NotifyHandlerFunc(f)).
 func (c *Characteristic) HandleNotifyFunc(f func(r Request, n Notifier)) {
 	c.HandleNotify(NotifyHandlerFunc(f))
+}
+
+func (c *Characteristic) GetNotifyHandler() NotifyHandler {
+	return c.nhandler
 }
 
 // TODO
