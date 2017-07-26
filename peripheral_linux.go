@@ -40,20 +40,24 @@ func (p *peripheral) ID() string           { return strings.ToUpper(net.Hardware
 func (p *peripheral) Name() string         { return p.pd.Name }
 func (p *peripheral) Services() []*Service { return p.svcs }
 
-func finish(op byte, h uint16, b []byte) bool {
+func finish(op byte, h uint16, b []byte) (bool, error) {
 	done := b[0] == attOpError && b[1] == op && b[2] == byte(h) && b[3] == byte(h>>8)
-	e := attEcode(b[4])
-	if e != attEcodeAttrNotFound {
-		// log.Printf("unexpected protocol error: %s", e)
-		// FIXME: terminate the connection
+	e := attEcodeSuccess
+	if b[0] == attOpError {
+		e = attEcode(b[4])
+		if e != attEcodeAttrNotFound {
+			// log.Printf("unexpected protocol error: %s", e)
+			// FIXME: terminate the connection
+		}
 	}
-	return done
+	return done, e
 }
 
 func (p *peripheral) DiscoverServices(ds []UUID) ([]*Service, error) {
 	// p.pd.Conn.Write([]byte{0x02, 0x87, 0x00}) // MTU
 	done := false
 	start := uint16(0x0001)
+	var err error
 	for !done {
 		op := byte(attOpReadByGroupReq)
 		b := make([]byte, 7)
@@ -63,7 +67,8 @@ func (p *peripheral) DiscoverServices(ds []UUID) ([]*Service, error) {
 		binary.LittleEndian.PutUint16(b[5:7], 0x2800)
 
 		b = p.sendReq(op, b)
-		if finish(op, start, b) {
+		done, err = finish(op, start, b)
+		if done {
 			break
 		}
 		b = b[1:]
@@ -93,7 +98,7 @@ func (p *peripheral) DiscoverServices(ds []UUID) ([]*Service, error) {
 			start = endh + 1
 		}
 	}
-	return p.svcs, nil
+	return p.svcs, err
 }
 
 func (p *peripheral) DiscoverIncludedServices(ss []UUID, s *Service) ([]*Service, error) {
@@ -105,6 +110,7 @@ func (p *peripheral) DiscoverCharacteristics(cs []UUID, s *Service) ([]*Characte
 	done := false
 	start := s.h
 	var prev *Characteristic
+	var err error
 	for !done {
 		op := byte(attOpReadByTypeReq)
 		b := make([]byte, 7)
@@ -114,7 +120,8 @@ func (p *peripheral) DiscoverCharacteristics(cs []UUID, s *Service) ([]*Characte
 		binary.LittleEndian.PutUint16(b[5:7], 0x2803)
 
 		b = p.sendReq(op, b)
-		if finish(op, start, b) {
+		done, err = finish(op, start, b)
+		if done {
 			break
 		}
 		b = b[1:]
@@ -159,12 +166,13 @@ func (p *peripheral) DiscoverCharacteristics(cs []UUID, s *Service) ([]*Characte
 	if len(s.chars) > 1 {
 		s.chars[len(s.chars)-1].endh = s.endh
 	}
-	return s.chars, nil
+	return s.chars, err
 }
 
 func (p *peripheral) DiscoverDescriptors(ds []UUID, c *Characteristic) ([]*Descriptor, error) {
 	done := false
 	start := c.vh + 1
+	var err error
 	for !done {
 		if c.endh == 0 {
 			c.endh = c.svc.endh
@@ -176,7 +184,8 @@ func (p *peripheral) DiscoverDescriptors(ds []UUID, c *Characteristic) ([]*Descr
 		binary.LittleEndian.PutUint16(b[3:5], c.endh)
 
 		b = p.sendReq(op, b)
-		if finish(attOpFindInfoReq, start, b) {
+		done, err = finish(op, start, b)
+		if done {
 			break
 		}
 		b = b[1:]
@@ -207,7 +216,7 @@ func (p *peripheral) DiscoverDescriptors(ds []UUID, c *Characteristic) ([]*Descr
 			start = h + 1
 		}
 	}
-	return c.descs, nil
+	return c.descs, err
 }
 
 func (p *peripheral) ReadCharacteristic(c *Characteristic) ([]byte, error) {
@@ -217,8 +226,9 @@ func (p *peripheral) ReadCharacteristic(c *Characteristic) ([]byte, error) {
 	binary.LittleEndian.PutUint16(b[1:3], c.vh)
 
 	b = p.sendReq(op, b)
+	_, err := finish(op, c.vh, b)
 	b = b[1:]
-	return b, nil
+	return b, err
 }
 
 func (p *peripheral) ReadLongCharacteristic(c *Characteristic) ([]byte, error) {
@@ -237,6 +247,8 @@ func (p *peripheral) ReadLongCharacteristic(c *Characteristic) ([]byte, error) {
 	var buf bytes.Buffer
 	buf.Write(firstRead)
 	off := uint16(len(firstRead))
+	done := false
+	err = attEcodeSuccess
 	for {
 		b := make([]byte, 5)
 		op := byte(attOpReadBlobReq)
@@ -245,6 +257,10 @@ func (p *peripheral) ReadLongCharacteristic(c *Characteristic) ([]byte, error) {
 		binary.LittleEndian.PutUint16(b[3:5], off)
 
 		b = p.sendReq(op, b)
+		done, err = finish(op, c.vh, b)
+		if done {
+			break
+		}
 		b = b[1:]
 		if len(b) == 0 {
 			break
@@ -255,7 +271,7 @@ func (p *peripheral) ReadLongCharacteristic(c *Characteristic) ([]byte, error) {
 			break
 		}
 	}
-	return buf.Bytes(), nil
+	return buf.Bytes(), err
 }
 
 func (p *peripheral) WriteCharacteristic(c *Characteristic, value []byte, noRsp bool) error {
@@ -273,9 +289,9 @@ func (p *peripheral) WriteCharacteristic(c *Characteristic, value []byte, noRsp 
 		return nil
 	}
 	b = p.sendReq(op, b)
-	// TODO: error handling
+	_, err := finish(op, c.vh, b)
 	b = b[1:]
-	return nil
+	return err
 }
 
 func (p *peripheral) ReadDescriptor(d *Descriptor) ([]byte, error) {
@@ -285,9 +301,9 @@ func (p *peripheral) ReadDescriptor(d *Descriptor) ([]byte, error) {
 	binary.LittleEndian.PutUint16(b[1:3], d.h)
 
 	b = p.sendReq(op, b)
+	_, err := finish(op, d.h, b)
 	b = b[1:]
-	// TODO: error handling
-	return b, nil
+	return b, err
 }
 
 func (p *peripheral) WriteDescriptor(d *Descriptor, value []byte) error {
@@ -298,9 +314,9 @@ func (p *peripheral) WriteDescriptor(d *Descriptor, value []byte) error {
 	copy(b[3:], value)
 
 	b = p.sendReq(op, b)
+	_, err := finish(op, d.h, b)
 	b = b[1:]
-	// TODO: error handling
-	return nil
+	return err
 }
 
 func (p *peripheral) setNotifyValue(c *Characteristic, flag uint16,
@@ -320,12 +336,12 @@ func (p *peripheral) setNotifyValue(c *Characteristic, flag uint16,
 	binary.LittleEndian.PutUint16(b[3:5], ccc)
 
 	b = p.sendReq(op, b)
+	_, err := finish(op, c.cccd.h, b)
 	b = b[1:]
-	// TODO: error handling
 	if f == nil {
 		p.sub.unsubscribe(c.vh)
 	}
-	return nil
+	return err
 }
 
 func (p *peripheral) SetNotifyValue(c *Characteristic,
@@ -441,13 +457,17 @@ func (p *peripheral) SetMTU(mtu uint16) error {
 	b := make([]byte, 3)
 	op := byte(attOpMtuReq)
 	b[0] = op
-	binary.LittleEndian.PutUint16(b[1:3], uint16(mtu))
+	h := uint16(mtu)
+	binary.LittleEndian.PutUint16(b[1:3], h)
 
 	b = p.sendReq(op, b)
-	serverMTU := binary.LittleEndian.Uint16(b[1:3])
-	if serverMTU < mtu {
-		mtu = serverMTU
+	done, err := finish(op, h, b)
+	if !done {
+		serverMTU := binary.LittleEndian.Uint16(b[1:3])
+		if serverMTU < mtu {
+			mtu = serverMTU
+		}
+		p.mtu = mtu
 	}
-	p.mtu = mtu
-	return nil
+	return err
 }
