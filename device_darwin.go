@@ -320,6 +320,7 @@ func (d *device) respondToRequest(id int, args xpc.Dict) {
 		u := UUID{args.MustGetUUID("kCBMsgArgDeviceUUID")}
 		t := args.MustGetInt("kCBMsgArgTransactionID")
 		a := 0
+		result := byte(0)
 		noRsp := false
 		xxws := args.MustGetArray("kCBMsgArgATTWrites")
 		for _, xxw := range xxws {
@@ -334,7 +335,7 @@ func (d *device) respondToRequest(id int, args xpc.Dict) {
 			attr := d.attrs[a]
 			c := newCentral(d, u)
 			r := Request{Central: c}
-			attr.pvt.(*Characteristic).whandler.ServeWrite(r, b)
+			result = attr.pvt.(*Characteristic).whandler.ServeWrite(r, b)
 			if i == 1 {
 				noRsp = true
 			}
@@ -347,7 +348,7 @@ func (d *device) respondToRequest(id int, args xpc.Dict) {
 			"kCBMsgArgAttributeID":   a,
 			"kCBMsgArgData":          nil,
 			"kCBMsgArgTransactionID": t,
-			"kCBMsgArgResult":        0,
+			"kCBMsgArgResult":        result,
 		})
 
 	case 21: // subscribed
