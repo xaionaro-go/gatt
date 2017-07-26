@@ -382,15 +382,21 @@ func (c *central) handleWrite(reqType byte, b []byte) []byte {
 	if !a.typ.Equal(attrClientCharacteristicConfigUUID) {
 		// Regular write, not CCC
 		r := Request{Central: c}
+		result := byte(0)
 		if c, ok := a.pvt.(*Characteristic); ok {
-			c.whandler.ServeWrite(r, value)
+			result = c.whandler.ServeWrite(r, value)
 		} else if d, ok := a.pvt.(*Characteristic); ok {
-			d.whandler.ServeWrite(r, value)
+			result = d.whandler.ServeWrite(r, value)
 		}
 		if noRsp {
 			return nil
 		} else {
-			return []byte{attOpWriteRsp}
+			resultEcode := attEcode(result)
+			if resultEcode == attEcodeSuccess {
+				return []byte{attOpWriteRsp}
+			} else {
+				return attErrorRsp(reqType, h, resultEcode)
+			}
 		}
 	}
 
