@@ -42,15 +42,18 @@ func (p *peripheral) Services() []*Service { return p.svcs }
 
 func finish(op byte, h uint16, b []byte) (bool, error) {
 	done := b[0] == attOpError && b[1] == op && b[2] == byte(h) && b[3] == byte(h>>8)
-	e := attEcodeSuccess
+	var err error
 	if b[0] == attOpError {
-		e = attEcode(b[4])
-		if e != attEcodeAttrNotFound {
+		err = attEcode(b[4])
+		if err == attEcodeAttrNotFound {
+			// Expect attribute not found errors
+			err = nil
+		} else {
 			// log.Printf("unexpected protocol error: %s", e)
 			// FIXME: terminate the connection
 		}
 	}
-	return done, e
+	return done, err
 }
 
 func (p *peripheral) DiscoverServices(ds []UUID) ([]*Service, error) {
