@@ -58,33 +58,33 @@ const (
 	attOpSignedWriteCmd     = 0xd2
 )
 
-type attEcode byte
+type AttEcode byte
 
 const (
-	attEcodeSuccess           attEcode = 0x00 // Success
-	attEcodeInvalidHandle     attEcode = 0x01 // The attribute handle given was not valid on this server.
-	attEcodeReadNotPerm       attEcode = 0x02 // The attribute cannot be read.
-	attEcodeWriteNotPerm      attEcode = 0x03 // The attribute cannot be written.
-	attEcodeInvalidPDU        attEcode = 0x04 // The attribute PDU was invalid.
-	attEcodeAuthentication    attEcode = 0x05 // The attribute requires authentication before it can be read or written.
-	attEcodeReqNotSupp        attEcode = 0x06 // Attribute server does not support the request received from the client.
-	attEcodeInvalidOffset     attEcode = 0x07 // Offset specified was past the end of the attribute.
-	attEcodeAuthorization     attEcode = 0x08 // The attribute requires authorization before it can be read or written.
-	attEcodePrepQueueFull     attEcode = 0x09 // Too many prepare writes have been queued.
-	attEcodeAttrNotFound      attEcode = 0x0a // No attribute found within the given attribute handle range.
-	attEcodeAttrNotLong       attEcode = 0x0b // The attribute cannot be read or written using the Read Blob Request.
-	attEcodeInsuffEncrKeySize attEcode = 0x0c // The Encryption Key Size used for encrypting this link is insufficient.
-	attEcodeInvalAttrValueLen attEcode = 0x0d // The attribute value length is invalid for the operation.
-	attEcodeUnlikely          attEcode = 0x0e // The attribute request that was requested has encountered an error that was unlikely, and therefore could not be completed as requested.
-	attEcodeInsuffEnc         attEcode = 0x0f // The attribute requires encryption before it can be read or written.
-	attEcodeUnsuppGrpType     attEcode = 0x10 // The attribute type is not a supported grouping attribute as defined by a higher layer specification.
-	attEcodeInsuffResources   attEcode = 0x11 // Insufficient Resources to complete the request.
+	AttEcodeSuccess           AttEcode = 0x00 // Success
+	AttEcodeInvalidHandle     AttEcode = 0x01 // The attribute handle given was not valid on this server.
+	AttEcodeReadNotPerm       AttEcode = 0x02 // The attribute cannot be read.
+	AttEcodeWriteNotPerm      AttEcode = 0x03 // The attribute cannot be written.
+	AttEcodeInvalidPDU        AttEcode = 0x04 // The attribute PDU was invalid.
+	AttEcodeAuthentication    AttEcode = 0x05 // The attribute requires authentication before it can be read or written.
+	AttEcodeReqNotSupp        AttEcode = 0x06 // Attribute server does not support the request received from the client.
+	AttEcodeInvalidOffset     AttEcode = 0x07 // Offset specified was past the end of the attribute.
+	AttEcodeAuthorization     AttEcode = 0x08 // The attribute requires authorization before it can be read or written.
+	AttEcodePrepQueueFull     AttEcode = 0x09 // Too many prepare writes have been queued.
+	AttEcodeAttrNotFound      AttEcode = 0x0a // No attribute found within the given attribute handle range.
+	AttEcodeAttrNotLong       AttEcode = 0x0b // The attribute cannot be read or written using the Read Blob Request.
+	AttEcodeInsuffEncrKeySize AttEcode = 0x0c // The Encryption Key Size used for encrypting this link is insufficient.
+	AttEcodeInvalAttrValueLen AttEcode = 0x0d // The attribute value length is invalid for the operation.
+	AttEcodeUnlikely          AttEcode = 0x0e // The attribute request that was requested has encountered an error that was unlikely, and therefore could not be completed as requested.
+	AttEcodeInsuffEnc         AttEcode = 0x0f // The attribute requires encryption before it can be read or written.
+	AttEcodeUnsuppGrpType     AttEcode = 0x10 // The attribute type is not a supported grouping attribute as defined by a higher layer specification.
+	AttEcodeInsuffResources   AttEcode = 0x11 // Insufficient Resources to complete the request.
 )
 
-func (a attEcode) Error() string {
+func (a AttEcode) Error() string {
 	switch i := int(a); {
 	case i < 0x11:
-		return attEcodeName[a]
+		return AttEcodeName[a]
 	case i >= 0x12 && i <= 0x7F: // Reserved for future use
 		return "reserved error code"
 	case i >= 0x80 && i <= 0x9F: // Application Error, defined by higher level
@@ -94,32 +94,32 @@ func (a attEcode) Error() string {
 	case i >= 0xE0 && i <= 0xFF: // Common profile and service error codes
 		return "profile or service error"
 	default: // can't happen, just make compiler happy
-		return "unkown error"
+		return "unknown error"
 	}
 }
 
-var attEcodeName = map[attEcode]string{
-	attEcodeSuccess:           "success",
-	attEcodeInvalidHandle:     "invalid handle",
-	attEcodeReadNotPerm:       "read not permitted",
-	attEcodeWriteNotPerm:      "write not permitted",
-	attEcodeInvalidPDU:        "invalid PDU",
-	attEcodeAuthentication:    "insufficient authentication",
-	attEcodeReqNotSupp:        "request not supported",
-	attEcodeInvalidOffset:     "invalid offset",
-	attEcodeAuthorization:     "insufficient authorization",
-	attEcodePrepQueueFull:     "prepare queue full",
-	attEcodeAttrNotFound:      "attribute not found",
-	attEcodeAttrNotLong:       "attribute not long",
-	attEcodeInsuffEncrKeySize: "insufficient encryption key size",
-	attEcodeInvalAttrValueLen: "invalid attribute value length",
-	attEcodeUnlikely:          "unlikely error",
-	attEcodeInsuffEnc:         "insufficient encryption",
-	attEcodeUnsuppGrpType:     "unsupported group type",
-	attEcodeInsuffResources:   "insufficient resources",
+var AttEcodeName = map[AttEcode]string{
+	AttEcodeSuccess:           "success",
+	AttEcodeInvalidHandle:     "invalid handle",
+	AttEcodeReadNotPerm:       "read not permitted",
+	AttEcodeWriteNotPerm:      "write not permitted",
+	AttEcodeInvalidPDU:        "invalid PDU",
+	AttEcodeAuthentication:    "insufficient authentication",
+	AttEcodeReqNotSupp:        "request not supported",
+	AttEcodeInvalidOffset:     "invalid offset",
+	AttEcodeAuthorization:     "insufficient authorization",
+	AttEcodePrepQueueFull:     "prepare queue full",
+	AttEcodeAttrNotFound:      "attribute not found",
+	AttEcodeAttrNotLong:       "attribute not long",
+	AttEcodeInsuffEncrKeySize: "insufficient encryption key size",
+	AttEcodeInvalAttrValueLen: "invalid attribute value length",
+	AttEcodeUnlikely:          "unlikely error",
+	AttEcodeInsuffEnc:         "insufficient encryption",
+	AttEcodeUnsuppGrpType:     "unsupported group type",
+	AttEcodeInsuffResources:   "insufficient resources",
 }
 
-func attErrorRsp(op byte, h uint16, s attEcode) []byte {
+func attErrorRsp(op byte, h uint16, s AttEcode) []byte {
 	return attErr{opcode: op, attr: h, status: s}.Marshal()
 }
 
@@ -142,7 +142,7 @@ var attRspFor = map[byte]byte{
 type attErr struct {
 	opcode uint8
 	attr   uint16
-	status attEcode
+	status AttEcode
 }
 
 // TODO: Reformulate in a way that lets the caller avoid allocs.
