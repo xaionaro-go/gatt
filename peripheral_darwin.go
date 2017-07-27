@@ -41,7 +41,7 @@ func (p *peripheral) DiscoverServices(ss []UUID) ([]*Service, error) {
 		"kCBMsgArgUUIDs":      uuidSlice(ss),
 	})
 	if res := rsp.MustGetInt("kCBMsgArgResult"); res != 0 {
-		return nil, attEcode(res)
+		return nil, AttEcode(res)
 	}
 	svcs := []*Service{}
 	for _, xss := range rsp["kCBMsgArgServices"].(xpc.Array) {
@@ -63,7 +63,7 @@ func (p *peripheral) DiscoverIncludedServices(ss []UUID, s *Service) ([]*Service
 		"kCBMsgArgUUIDs":              uuidSlice(ss),
 	})
 	if res := rsp.MustGetInt("kCBMsgArgResult"); res != 0 {
-		return nil, attEcode(res)
+		return nil, AttEcode(res)
 	}
 	// TODO
 	return nil, notImplemented
@@ -77,7 +77,7 @@ func (p *peripheral) DiscoverCharacteristics(cs []UUID, s *Service) ([]*Characte
 		"kCBMsgArgUUIDs":              uuidSlice(cs),
 	})
 	if res := rsp.MustGetInt("kCBMsgArgResult"); res != 0 {
-		return nil, attEcode(res)
+		return nil, AttEcode(res)
 	}
 	for _, xcs := range rsp.MustGetArray("kCBMsgArgCharacteristics") {
 		xc := xcs.(xpc.Dict)
@@ -115,7 +115,7 @@ func (p *peripheral) ReadCharacteristic(c *Characteristic) ([]byte, error) {
 		"kCBMsgArgCharacteristicValueHandle": c.vh,
 	})
 	if res := rsp.MustGetInt("kCBMsgArgResult"); res != 0 {
-		return nil, attEcode(res)
+		return nil, AttEcode(res)
 	}
 	b := rsp.MustGetBytes("kCBMsgArgData")
 	return b, nil
@@ -139,7 +139,7 @@ func (p *peripheral) WriteCharacteristic(c *Characteristic, b []byte, noRsp bool
 	}
 	rsp := p.sendReq(65, args)
 	if res := rsp.MustGetInt("kCBMsgArgResult"); res != 0 {
-		return attEcode(res)
+		return AttEcode(res)
 	}
 	return nil
 }
@@ -150,7 +150,7 @@ func (p *peripheral) ReadDescriptor(d *Descriptor) ([]byte, error) {
 		"kCBMsgArgDescriptorHandle": d.h,
 	})
 	if res := rsp.MustGetInt("kCBMsgArgResult"); res != 0 {
-		return nil, attEcode(res)
+		return nil, AttEcode(res)
 	}
 	b := rsp.MustGetBytes("kCBMsgArgData")
 	return b, nil
@@ -163,7 +163,7 @@ func (p *peripheral) WriteDescriptor(d *Descriptor, b []byte) error {
 		"kCBMsgArgData":             b,
 	})
 	if res := rsp.MustGetInt("kCBMsgArgResult"); res != 0 {
-		return attEcode(res)
+		return AttEcode(res)
 	}
 	return nil
 }
@@ -185,7 +185,7 @@ func (p *peripheral) SetNotifyValue(c *Characteristic, f func(*Characteristic, [
 		"kCBMsgArgState":                     set,
 	})
 	if res := rsp.MustGetInt("kCBMsgArgResult"); res != 0 {
-		return attEcode(res)
+		return AttEcode(res)
 	}
 	// To avoid race condition, unregisteration is handled after server responses.
 	if f == nil {

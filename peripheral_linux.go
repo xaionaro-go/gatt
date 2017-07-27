@@ -44,8 +44,8 @@ func finish(op byte, h uint16, b []byte) (bool, error) {
 	done := b[0] == attOpError && b[1] == op && b[2] == byte(h) && b[3] == byte(h>>8)
 	var err error
 	if b[0] == attOpError {
-		err = attEcode(b[4])
-		if err == attEcodeAttrNotFound {
+		err = AttEcode(b[4])
+		if err == AttEcodeAttrNotFound {
 			// Expect attribute not found errors
 			err = nil
 		} else {
@@ -251,7 +251,7 @@ func (p *peripheral) ReadLongCharacteristic(c *Characteristic) ([]byte, error) {
 	buf.Write(firstRead)
 	off := uint16(len(firstRead))
 	done := false
-	err = attEcodeSuccess
+	err = AttEcodeSuccess
 	for {
 		b := make([]byte, 5)
 		op := byte(attOpReadBlobReq)
@@ -411,7 +411,7 @@ func (p *peripheral) loop() {
 
 					}
 					log.Printf("Request 0x%02x got a mismatched response: 0x%02x", reqOp, rspOp)
-					p.l2c.Write(attErrorRsp(rspOp, 0x0000, attEcodeReqNotSupp))
+					p.l2c.Write(attErrorRsp(rspOp, 0x0000, AttEcodeReqNotSupp))
 				}
 			case <-p.quitc:
 				return
