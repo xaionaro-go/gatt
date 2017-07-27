@@ -137,7 +137,7 @@ func (p *peripheral) WriteCharacteristic(c *Characteristic, b []byte, noRsp bool
 		p.sendCmd(66, args)
 		return nil
 	}
-	rsp := p.sendReq(65, args)
+	rsp := p.sendReq(66, args)
 	if res := rsp.MustGetInt("kCBMsgArgResult"); res != 0 {
 		return AttEcode(res)
 	}
