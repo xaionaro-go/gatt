@@ -462,10 +462,12 @@ func (d *device) HandleXpcEvent(event xpc.Dict, err error) {
 		p := d.plist[u.String()]
 		delete(d.plist, u.String())
 		d.plistmu.Unlock()
-		if d.peripheralDisconnected != nil {
-			d.peripheralDisconnected(p, nil) // TODO: Get Result as error?
+		if p != nil {
+			if d.peripheralDisconnected != nil {
+				d.peripheralDisconnected(p, nil) // TODO: Get Result as error?
+			}
+			close(p.quitc)
 		}
-		close(p.quitc)
 
 	case // Peripheral events
 		rssiRead,
@@ -483,8 +485,9 @@ func (d *device) HandleXpcEvent(event xpc.Dict, err error) {
 		d.plistmu.Lock()
 		p := d.plist[u.String()]
 		d.plistmu.Unlock()
-		p.rspc <- message{id: id, args: args}
-
+		if p != nil {
+			p.rspc <- message{id: id, args: args}
+		}
 	default:
 		//log.Printf("Unhandled event: %#v", event)
 	}
