@@ -144,6 +144,7 @@ func (d *device) StopAdvertising() error {
 
 func (d *device) Stop() error {
 	// No Implementation
+	defer d.stateChanged(d, StatePoweredOff)
 	return errors.New("FIXME: Advertise error")
 }
 
