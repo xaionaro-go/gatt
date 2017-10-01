@@ -109,6 +109,17 @@ type deviceHandler struct {
 	peripheralDisconnected func(p Peripheral, err error)
 }
 
+func getDeviceHandler(d Device) *deviceHandler {
+	switch t := d.(type) {
+	case *device:
+		return &t.deviceHandler
+	case *simDevice:
+		return &t.deviceHandler
+	default:
+		return nil
+	}
+}
+
 // A Handler is a self-referential function, which registers the options specified.
 // See http://commandcenter.blogspot.com.au/2014/01/self-referential-functions-and-design.html for more discussion.
 type Handler func(Device)
@@ -122,27 +133,27 @@ func (d *device) Handle(hh ...Handler) {
 
 // CentralConnected returns a Handler, which sets the specified function to be called when a device connects to the server.
 func CentralConnected(f func(Central)) Handler {
-	return func(d Device) { d.(*device).centralConnected = f }
+	return func(d Device) { getDeviceHandler(d).centralConnected = f }
 }
 
 // CentralDisconnected returns a Handler, which sets the specified function to be called when a device disconnects from the server.
 func CentralDisconnected(f func(Central)) Handler {
-	return func(d Device) { d.(*device).centralDisconnected = f }
+	return func(d Device) { getDeviceHandler(d).centralDisconnected = f }
 }
 
 // PeripheralDiscovered returns a Handler, which sets the specified function to be called when a remote peripheral device is found during scan procedure.
 func PeripheralDiscovered(f func(Peripheral, *Advertisement, int)) Handler {
-	return func(d Device) { d.(*device).peripheralDiscovered = f }
+	return func(d Device) { getDeviceHandler(d).peripheralDiscovered = f }
 }
 
 // PeripheralConnected returns a Handler, which sets the specified function to be called when a remote peripheral device connects.
 func PeripheralConnected(f func(Peripheral, error)) Handler {
-	return func(d Device) { d.(*device).peripheralConnected = f }
+	return func(d Device) { getDeviceHandler(d).peripheralConnected = f }
 }
 
 // PeripheralDisconnected returns a Handler, which sets the specified function to be called when a remote peripheral device disconnects.
 func PeripheralDisconnected(f func(Peripheral, error)) Handler {
-	return func(d Device) { d.(*device).peripheralDisconnected = f }
+	return func(d Device) { getDeviceHandler(d).peripheralDisconnected = f }
 }
 
 // An Option is a self-referential function, which sets the option specified.
