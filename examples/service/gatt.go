@@ -3,7 +3,7 @@ package service
 import (
 	"log"
 
-	"github.com/cksmith/gatt"
+	"github.com/bettercap/gatt"
 )
 
 var (

@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cksmith/gatt"
-	"github.com/cksmith/gatt/examples/option"
+	"github.com/bettercap/gatt"
+	"github.com/bettercap/gatt/examples/option"
 )
 
 var done = make(chan struct{})

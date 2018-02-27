@@ -7,8 +7,8 @@ import (
 	"io"
 	"log"
 
-	"github.com/cksmith/gatt/linux/evt"
-	"github.com/cksmith/gatt/linux/util"
+	"github.com/bettercap/gatt/linux/evt"
+	"github.com/bettercap/gatt/linux/util"
 )
 
 type CmdParam interface {
