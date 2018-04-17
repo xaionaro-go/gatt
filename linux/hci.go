@@ -393,7 +393,7 @@ func (h *HCI) handleLEMeta(b []byte) error {
 		go h.handleLTKRequest(b)
 	// case evt.LERemoteConnectionParameterRequest:
 	default:
-		return fmt.Errorf("Unhandled LE event: %s, [ % X ]", code, b)
+		return fmt.Errorf("Unhandled LE event: 0x%02x, [ % X ]", code, b)
 	}
 	return nil
 }
