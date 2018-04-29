@@ -89,9 +89,9 @@ func (a *Advertisement) unmarshall(b []byte) error {
 	}
 
 	serviceDataList := func(sd []ServiceData, d []byte, w int) []ServiceData {
-		serviceData := ServiceData {UUID{d[:w]}, make([]byte, len(d) - w)}
-                copy(serviceData.Data, d[2:])
-                return append(sd, serviceData)
+		serviceData := ServiceData{UUID{d[:w]}, make([]byte, len(d)-w)}
+		copy(serviceData.Data, d[2:])
+		return append(sd, serviceData)
 	}
 
 	for len(b) > 0 {
