@@ -1,6 +1,7 @@
 package gatt
 
 import (
+	"bytes"
 	"errors"
 )
 
@@ -122,9 +123,9 @@ func (a *Advertisement) unmarshall(b []byte) error {
 		case typeAllUUID128:
 			a.Services = uuidList(a.Services, d, 16)
 		case typeShortName:
-			a.LocalName = string(d)
+			a.LocalName = zeroTruncate(d)
 		case typeCompleteName:
-			a.LocalName = string(d)
+			a.LocalName = zeroTruncate(d)
 		case typeTxPower:
 			a.TxPowerLevel = int(d[0])
 		case typeServiceSol16:
@@ -147,6 +148,14 @@ func (a *Advertisement) unmarshall(b []byte) error {
 		b = b[1+l:]
 	}
 	return nil
+}
+
+func zeroTruncate(b []byte) string {
+	i := bytes.Index(b, []byte{0})
+	if i < 0 {
+		return string(b)
+	}
+	return string(b[:i])
 }
 
 // AdvPacket is an utility to help crafting advertisment or scan response data.
