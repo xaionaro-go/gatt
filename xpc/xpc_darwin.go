@@ -44,7 +44,14 @@ func (d Dict) MustGetArray(k string) Array {
 }
 
 func (d Dict) MustGetBytes(k string) []byte {
-	return d[k].([]byte)
+	switch t := d[k].(type) {
+	case string:
+		return []byte(d[k].(string))
+	case []byte:
+		return d[k].([]byte)
+	default:
+		panic(fmt.Sprintf("unknown type %v", t))
+	}
 }
 
 func (d Dict) MustGetHexBytes(k string) string {
