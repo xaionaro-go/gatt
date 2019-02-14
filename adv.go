@@ -110,7 +110,7 @@ func (a *Advertisement) unmarshall(b []byte) error {
 
 		switch t {
 		case typeFlags:
-			a.Flags = int8(d[0])
+			a.Flags = uint8(d[0])
 		case typeSomeUUID16:
 			a.Services = uuidList(a.Services, d, 2)
 		case typeAllUUID16:
