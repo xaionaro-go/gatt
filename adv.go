@@ -68,7 +68,7 @@ type ServiceData struct {
 // Embedded/Linux folks might be interested in more details.
 type Advertisement struct {
 	LocalName        string
-	Flags            uint16
+	Flags            uint8
 	ManufacturerData []byte
 	ServiceData      []ServiceData
 	Services         []UUID
@@ -111,7 +111,7 @@ func (a *Advertisement) unmarshall(b []byte) error {
 
 		switch t {
 		case typeFlags:
-			a.Flags = binary.LittleEndian.Uint16(d[0:2])
+			a.Flags = int8(d[0])
 		case typeSomeUUID16:
 			a.Services = uuidList(a.Services, d, 2)
 		case typeAllUUID16:
