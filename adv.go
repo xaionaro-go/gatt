@@ -67,9 +67,11 @@ func (f Flags) String() string {
 		bits = append(bits, "Limited Discoverable")
 	}
 
-	if f&flagGeneralDiscoverable != 0 {
-		bits = append(bits, "General Discoverable")
-	}
+	/*
+		if f&flagGeneralDiscoverable != 0 {
+			bits = append(bits, "General Discoverable")
+		}
+	*/
 
 	if f&flagLEOnly != 0 {
 		bits = append(bits, "BR/EDR Not Supported")
