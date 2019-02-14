@@ -63,23 +63,23 @@ type Flags uint8
 func (f Flags) String() string {
 	bits := []string{}
 
-	if f & flagLimitedDiscoverable {
+	if f&flagLimitedDiscoverable != 0 {
 		bits = append(bits, "Limited Discoverable")
 	}
 
-	if f & flagGeneralDiscoverable {
+	if f&flagGeneralDiscoverable != 0 {
 		bits = append(bits, "General Discoverable")
 	}
 
-	if f & flagLEOnly {
+	if f&flagLEOnly != 0 {
 		bits = append(bits, "BR/EDR Not Supported")
 	}
 
-	if f & flagBothController {
+	if f&flagBothController != 0 {
 		bits = append(bits, "LE + BR/EDR (controller)")
 	}
 
-	if f & flagBothHost {
+	if f&flagBothHost != 0 {
 		bits = append(bits, "LE + BR/EDR (host)")
 	}
 
