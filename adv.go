@@ -2,6 +2,7 @@ package gatt
 
 import (
 	"bytes"
+	"encoding/binary"
 	"errors"
 )
 
@@ -67,6 +68,7 @@ type ServiceData struct {
 // Embedded/Linux folks might be interested in more details.
 type Advertisement struct {
 	LocalName        string
+	Flags            uint16
 	ManufacturerData []byte
 	ServiceData      []ServiceData
 	Services         []UUID
@@ -109,7 +111,7 @@ func (a *Advertisement) unmarshall(b []byte) error {
 
 		switch t {
 		case typeFlags:
-			// TODO: should we do anything about the discoverability here?
+			a.Flags = binary.LittleEndian.Uint16(d)
 		case typeSomeUUID16:
 			a.Services = uuidList(a.Services, d, 2)
 		case typeAllUUID16:
