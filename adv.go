@@ -1964,6 +1964,8 @@ type ServiceData struct {
 type Advertisement struct {
 	LocalName        string
 	Flags            Flags
+	CompanyID        uint16
+	Company          string
 	ManufacturerData []byte
 	ServiceData      []ServiceData
 	Services         []UUID
@@ -2032,8 +2034,13 @@ func (a *Advertisement) unmarshall(b []byte) error {
 		case typeServiceSol32:
 			a.SolicitedService = uuidList(a.SolicitedService, d, 4)
 		case typeManufacturerData:
-			a.ManufacturerData = make([]byte, len(d))
+			sz := len(d)
+			a.ManufacturerData = make([]byte, sz)
 			copy(a.ManufacturerData, d)
+			if sz >= 2 {
+				a.CompanyID = binary.LittleEndian.Uint16(a.ManufacturerData[0:2])
+				a.Company = CompanyIdents[a.CompanyID]
+			}
 		case typeServiceData16:
 			a.ServiceData = serviceDataList(a.ServiceData, d, 2)
 		case typeServiceData32:
@@ -2045,16 +2052,6 @@ func (a *Advertisement) unmarshall(b []byte) error {
 		b = b[1+l:]
 	}
 	return nil
-}
-
-func (a *Advertisement) CompanyID() string {
-	if len(a.ManufacturerData) >= 2 {
-		companyId := binary.LittleEndian.Uint16(a.ManufacturerData[0:2])
-		if name, found := CompanyIdents[companyId]; found {
-			return name
-		}
-	}
-	return ""
 }
 
 func zeroTruncate(b []byte) string {
