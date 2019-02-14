@@ -3,6 +3,7 @@ package gatt
 import (
 	"bytes"
 	"errors"
+	"strings"
 )
 
 // MaxEIRPacketLength is the maximum allowed AdvertisingPacket
@@ -57,6 +58,34 @@ const (
 	flagBothHost            = 0x10 // Simultaneous LE and BR/EDR to Same Device Capable (Host).
 )
 
+type Flags uint8
+
+func (f Flags) String() string {
+	bits := []string{}
+
+	if f & flagLimitedDiscoverable {
+		bits = append(bits, "Limited Discoverable")
+	}
+
+	if f & flagGeneralDiscoverable {
+		bits = append(bits, "General Discoverable")
+	}
+
+	if f & flagLEOnly {
+		bits = append(bits, "BR/EDR Not Supported")
+	}
+
+	if f & flagBothController {
+		bits = append(bits, "LE + BR/EDR (controller)")
+	}
+
+	if f & flagBothHost {
+		bits = append(bits, "LE + BR/EDR (host)")
+	}
+
+	return strings.Join(bits, ", ")
+}
+
 // FIXME: check the unmarshalling of this data structure.
 type ServiceData struct {
 	UUID UUID
@@ -67,7 +96,7 @@ type ServiceData struct {
 // Embedded/Linux folks might be interested in more details.
 type Advertisement struct {
 	LocalName        string
-	Flags            uint8
+	Flags            Flags
 	ManufacturerData []byte
 	ServiceData      []ServiceData
 	Services         []UUID
@@ -110,7 +139,7 @@ func (a *Advertisement) unmarshall(b []byte) error {
 
 		switch t {
 		case typeFlags:
-			a.Flags = uint8(d[0])
+			a.Flags = Flags(d[0])
 		case typeSomeUUID16:
 			a.Services = uuidList(a.Services, d, 2)
 		case typeAllUUID16:
