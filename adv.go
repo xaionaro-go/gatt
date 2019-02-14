@@ -111,7 +111,7 @@ func (a *Advertisement) unmarshall(b []byte) error {
 
 		switch t {
 		case typeFlags:
-			a.Flags = binary.LittleEndian.Uint16(d)
+			a.Flags = binary.LittleEndian.Uint16(d[0:2])
 		case typeSomeUUID16:
 			a.Services = uuidList(a.Services, d, 2)
 		case typeAllUUID16:
