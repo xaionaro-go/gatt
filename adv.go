@@ -2,7 +2,6 @@ package gatt
 
 import (
 	"bytes"
-	"encoding/binary"
 	"errors"
 )
 
