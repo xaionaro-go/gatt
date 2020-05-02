@@ -92,7 +92,7 @@ func NewHCI(devID int, chk bool, maxConn int) (*HCI, error) {
 
 func (h *HCI) Close() error {
 	log.Printf("hci.Close()")
-	h.pool.Put(nil)
+	h.pool.Close()
 	<-h.loopDone
 	log.Printf("mainLoop exited")
 	for _, c := range h.conns {
