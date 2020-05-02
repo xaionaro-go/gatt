@@ -195,13 +195,10 @@ func (h *HCI) mainLoop() {
 			log.Printf("mainloop err: %v", err)
 			return
 		}
-		if n == 0 {
-			log.Printf("mainLoop failed to read")
-			return
+		if n > 0 {
+			// log.Printf("hci.mainLoop -> handlePacket")
+			h.handlePacket(b, n)
 		}
-
-		// log.Printf("hci.mainLoop -> handlePacket")
-		h.handlePacket(b, n)
 	}
 	log.Printf("hci.mainLoop stopped")
 }
