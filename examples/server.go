@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/bettercap/gatt"
-	"github.com/bettercap/gatt/examples/option"
-	"github.com/bettercap/gatt/examples/service"
+	"github.com/photostorm/gatt"
+	"github.com/photostorm/gatt/examples/option"
+	"github.com/photostorm/gatt/examples/service"
 )
 
 func main() {

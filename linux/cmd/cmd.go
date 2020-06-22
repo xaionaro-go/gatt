@@ -7,8 +7,8 @@ import (
 	"io"
 	"log"
 
-	"github.com/bettercap/gatt/linux/evt"
-	"github.com/bettercap/gatt/linux/util"
+	"github.com/photostorm/gatt/linux/evt"
+	"github.com/photostorm/gatt/linux/util"
 )
 
 type CmdParam interface {
@@ -140,9 +140,9 @@ const (
 	hostCtl     = 0x03
 	infoParam   = 0x04
 	statusParam = 0x05
-	testingCmd  = 0X3E
+	testingCmd  = 0x3E
 	leCtl       = 0x08
-	vendorCmd   = 0X3F
+	vendorCmd   = 0x3F
 )
 
 const (

@@ -7,8 +7,8 @@ import (
 	"syscall"
 	"unsafe"
 
-	"github.com/bettercap/gatt/linux/gioctl"
-	"github.com/bettercap/gatt/linux/socket"
+	"github.com/photostorm/gatt/linux/gioctl"
+	"github.com/photostorm/gatt/linux/socket"
 	"golang.org/x/sys/unix"
 )
 

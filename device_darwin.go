@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bettercap/gatt/xpc"
+	"github.com/photostorm/gatt/xpc"
 )
 
 const (

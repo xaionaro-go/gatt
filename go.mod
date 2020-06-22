@@ -1,4 +1,4 @@
-module github.com/bettercap/gatt
+module github.com/photostorm/gatt
 
 go 1.13
 

@@ -1,6 +1,6 @@
 package option
 
-import "github.com/bettercap/gatt"
+import "github.com/photostorm/gatt"
 
 var DefaultClientOptions = []gatt.Option{
 	gatt.MacDeviceRole(gatt.CentralManager),
