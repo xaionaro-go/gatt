@@ -97,7 +97,6 @@ func (c *conn) write(cid int, b []byte) (int, error) {
 	flag := uint8(0) // ACL data continuation flag
 	tlen := len(b)   // Total length of the l2cap payload
 
-	logger.Info("l2cap", "W", fmt.Sprintf("[% X]", b))
 	w := append(
 		[]byte{
 			0,    // packet type
@@ -139,7 +138,7 @@ func (c *conn) Read(b []byte) (int, error) {
 	if len(d) > len(b) {
 		return copy(b, d), io.ErrShortBuffer
 	}
-	logger.Info("l2cap", "R", fmt.Sprintf("[% X]", d))
+
 	n := copy(b, d)
 	return n, nil
 }
