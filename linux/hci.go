@@ -6,6 +6,8 @@ import (
 	"log"
 	"sync"
 
+	"golang.org/x/sys/unix"
+
 	"github.com/photostorm/gatt/linux/cmd"
 	"github.com/photostorm/gatt/linux/evt"
 	"github.com/photostorm/gatt/linux/util"
@@ -192,6 +194,10 @@ func (h *HCI) mainLoop() {
 		// log.Printf("hci.mainLoop Read(%d)", len(b))
 		n, err := h.d.Read(b)
 		if err != nil {
+			if err == unix.EINTR {
+				continue
+			}
+
 			log.Printf("mainloop err: %v", err)
 			return
 		}
