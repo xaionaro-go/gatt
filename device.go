@@ -44,6 +44,8 @@ type Device interface {
 	// If name doesn't fit in the advertising packet, it will be put in scan response.
 	AdvertiseNameAndServices(name string, ss []UUID) error
 
+	AdvertiseNameAndIBeaconData(name string, b []byte) error
+
 	// AdvertiseIBeaconData advertise iBeacon with given manufacturer data.
 	AdvertiseIBeaconData(b []byte) error
 

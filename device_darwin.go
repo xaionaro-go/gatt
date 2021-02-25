@@ -110,6 +110,10 @@ func (d *device) AdvertiseNameAndServices(name string, ss []UUID) error {
 	return nil
 }
 
+func (d *device) AdvertiseNameAndIBeaconData(name string, b []byte) error {
+	return errors.New("Method not supported")
+}
+
 func (d *device) AdvertiseIBeaconData(data []byte) error {
 	var utsname xpc.Utsname
 	xpc.Uname(&utsname)

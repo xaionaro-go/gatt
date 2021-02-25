@@ -4,12 +4,12 @@ import (
 	"errors"
 	"log"
 	"sync"
-	"syscall"
 	"unsafe"
+
+	"golang.org/x/sys/unix"
 
 	"github.com/photostorm/gatt/linux/gioctl"
 	"github.com/photostorm/gatt/linux/socket"
-	"golang.org/x/sys/unix"
 )
 
 type device struct {
@@ -22,7 +22,7 @@ type device struct {
 }
 
 func newDevice(n int, chk bool) (*device, error) {
-	fd, err := socket.Socket(socket.AF_BLUETOOTH, syscall.SOCK_RAW, socket.BTPROTO_HCI)
+	fd, err := socket.Socket(socket.AF_BLUETOOTH, unix.SOCK_RAW, socket.BTPROTO_HCI)
 	if err != nil {
 		log.Printf("could not create AF_BLUETOOTH raw socket")
 		return nil, err
@@ -64,7 +64,7 @@ func newSocket(fd, n int, chk bool) (*device, error) {
 	}
 	log.Printf("dev: %s up", name)
 	if err := gioctl.Ioctl(uintptr(fd), hciUpDevice, uintptr(n)); err != nil {
-		if err != syscall.EALREADY {
+		if err != unix.EALREADY {
 			return nil, err
 		}
 		log.Printf("dev: %s reset", name)
@@ -82,7 +82,7 @@ func newSocket(fd, n int, chk bool) (*device, error) {
 	// on older kernels.
 	sa := socket.SockaddrHCI{Dev: n, Channel: socket.HCI_CHANNEL_USER}
 	if err := socket.Bind(fd, &sa); err != nil {
-		if err != syscall.EINVAL {
+		if err != unix.EINVAL {
 			return nil, err
 		}
 		log.Printf("dev: %s can't bind to hci user channel, err: %s.", name, err)
@@ -115,16 +115,16 @@ func (d device) Read(b []byte) (int, error) {
 	if n == 0 || err != nil {
 		return 0, err
 	}
-	return syscall.Read(d.fd, b)
+	return unix.Read(d.fd, b)
 }
 
 func (d device) Write(b []byte) (int, error) {
 	d.wmu.Lock()
 	defer d.wmu.Unlock()
-	return syscall.Write(d.fd, b)
+	return unix.Write(d.fd, b)
 }
 
 func (d device) Close() error {
 	log.Printf("linux.device.Close()")
-	return syscall.Close(d.fd)
+	return unix.Close(d.fd)
 }

@@ -40,6 +40,10 @@ func (d *simDevice) AdvertiseIBeaconData(b []byte) error {
 	return errors.New("Method not supported")
 }
 
+func (d *simDevice) AdvertiseNameAndIBeaconData(name string, b []byte) error {
+	return errors.New("Method not supported")
+}
+
 func (d *simDevice) AdvertiseIBeacon(u UUID, major, minor uint16, pwr int8) error {
 	return errors.New("Method not supported")
 }
