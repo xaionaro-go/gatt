@@ -34,6 +34,8 @@ func (s State) String() string {
 // order to keep have keep compatible in API level.
 // Package users can use the Handler to set these handlers.
 type Device interface {
+	DevID() int
+
 	Init(stateChanged func(Device, State)) error
 
 	// Advertise advertise AdvPacket

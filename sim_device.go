@@ -114,6 +114,10 @@ func (p *simPeripheral) ID() string {
 	return "Sim ID"
 }
 
+func (d *simDevice) DevID() int {
+	return -1
+}
+
 func (p *simPeripheral) Name() string {
 	return "Sim"
 }

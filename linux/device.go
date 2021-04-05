@@ -107,6 +107,10 @@ func newSocket(fd, n int, chk bool) (*device, error) {
 	}, nil
 }
 
+func (d device) DevId() int {
+	return d.dev
+}
+
 func (d device) Read(b []byte) (int, error) {
 	d.rmu.Lock()
 	defer d.rmu.Unlock()

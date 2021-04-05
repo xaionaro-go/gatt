@@ -108,6 +108,10 @@ func (d *device) Init(f func(Device, State)) error {
 	return nil
 }
 
+func (d *device) DevID() int {
+	return d.devID
+}
+
 func (d *device) Stop() error {
 	d.state = StatePoweredOff
 	defer d.stateChanged(d, d.state)
