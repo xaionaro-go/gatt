@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/raff/goble/xpc"
+	"github.com/photostorm/gatt/xpc"
 )
 
 const (
@@ -338,7 +338,7 @@ func (d *device) respondToRequest(id int, args xpc.Dict) {
 
 	switch id {
 	case 19: // ReadRequest
-		u := UUID{copyUUIDToByte(args.MustGetUUID("kCBMsgArgDeviceUUID"))}
+		u := UUID{args.MustGetUUID("kCBMsgArgDeviceUUID")}
 		t := args.MustGetInt("kCBMsgArgTransactionID")
 		a := args.MustGetInt("kCBMsgArgAttributeID")
 		o := args.MustGetInt("kCBMsgArgOffset")
@@ -367,7 +367,7 @@ func (d *device) respondToRequest(id int, args xpc.Dict) {
 		})
 
 	case 20: // WriteRequest
-		u := UUID{copyUUIDToByte(args.MustGetUUID("kCBMsgArgDeviceUUID"))}
+		u := UUID{args.MustGetUUID("kCBMsgArgDeviceUUID")}
 		t := args.MustGetInt("kCBMsgArgTransactionID")
 		a := 0
 		result := byte(0)
@@ -402,7 +402,7 @@ func (d *device) respondToRequest(id int, args xpc.Dict) {
 		})
 
 	case 21: // subscribed
-		u := UUID{copyUUIDToByte(args.MustGetUUID("kCBMsgArgDeviceUUID"))}
+		u := UUID{args.MustGetUUID("kCBMsgArgDeviceUUID")}
 		a := args.MustGetInt("kCBMsgArgAttributeID")
 		attr := d.attrs[a]
 		c := newCentral(d, u)
@@ -410,7 +410,7 @@ func (d *device) respondToRequest(id int, args xpc.Dict) {
 		c.startNotify(attr, c.mtu)
 
 	case 22: // unubscribed
-		u := UUID{copyUUIDToByte(args.MustGetUUID("kCBMsgArgDeviceUUID"))}
+		u := UUID{args.MustGetUUID("kCBMsgArgDeviceUUID")}
 		a := args.MustGetInt("kCBMsgArgAttributeID")
 		attr := d.attrs[a]
 		if c := d.subscribers[u.String()]; c != nil {
@@ -462,7 +462,7 @@ func (d *device) HandleXpcEvent(event xpc.Dict, err error) {
 		if len(xa) == 0 {
 			return
 		}
-		u := UUID{copyUUIDToByte(args.MustGetUUID("kCBMsgArgDeviceUUID"))}
+		u := UUID{args.MustGetUUID("kCBMsgArgDeviceUUID")}
 		a := &Advertisement{
 			LocalName:        xa.GetString("kCBAdvDataLocalName", args.GetString("kCBMsgArgName", "")),
 			TxPowerLevel:     xa.GetInt("kCBAdvDataTxPowerLevel", 0),
@@ -488,7 +488,7 @@ func (d *device) HandleXpcEvent(event xpc.Dict, err error) {
 			}
 		}
 		if d.peripheralDiscovered != nil {
-			go d.peripheralDiscovered(&peripheral{id: copyUUIDToByte16(u.b), d: d}, a, rssi)
+			go d.peripheralDiscovered(&peripheral{id: xpc.UUID(u.b), d: d}, a, rssi)
 		}
 
 	case peripheralConnected, peripheralConnected_2:
@@ -501,9 +501,9 @@ func (d *device) HandleXpcEvent(event xpc.Dict, err error) {
 			break
 		}
 
-		u := UUID{copyUUIDToByte(args.MustGetUUID("kCBMsgArgDeviceUUID"))}
+		u := UUID{args.MustGetUUID("kCBMsgArgDeviceUUID")}
 		p := &peripheral{
-			id:    xpc.UUID(copyUUIDToByte16(u.b)),
+			id:    xpc.UUID(u.b),
 			d:     d,
 			reqc:  make(chan message),
 			rspc:  make(chan message),
@@ -520,7 +520,7 @@ func (d *device) HandleXpcEvent(event xpc.Dict, err error) {
 		}
 
 	case peripheralDisconnected:
-		u := UUID{copyUUIDToByte(args.MustGetUUID("kCBMsgArgDeviceUUID"))}
+		u := UUID{args.MustGetUUID("kCBMsgArgDeviceUUID")}
 		d.plistmu.Lock()
 		p := d.plist[u.String()]
 		delete(d.plist, u.String())
@@ -545,7 +545,7 @@ func (d *device) HandleXpcEvent(event xpc.Dict, err error) {
 		descriptorRead,
 		descriptorWritten:
 
-		u := UUID{copyUUIDToByte(args.MustGetUUID("kCBMsgArgDeviceUUID"))}
+		u := UUID{args.MustGetUUID("kCBMsgArgDeviceUUID")}
 		d.plistmu.Lock()
 		p := d.plist[u.String()]
 		d.plistmu.Unlock()
@@ -581,24 +581,4 @@ func (d *device) loop() {
 func (d *device) sendCBMsg(id int, args xpc.Dict) {
 	// log.Printf("<< %d, %v", id, args)
 	d.conn.Send(xpc.Dict{"kCBMsgId": id, "kCBMsgArgs": args}, false)
-}
-
-func copyUUIDToByte(array [16]byte) []byte {
-	var output = make([]byte, 16)
-
-	for i, v := range array {
-		output[i] = v
-	}
-
-	return output
-}
-
-func copyUUIDToByte16(array []byte) [16]byte {
-	var output = [16]byte{}
-
-	for i, v := range array {
-		output[i] = v
-	}
-
-	return output
 }

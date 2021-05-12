@@ -4,7 +4,7 @@ import (
 	"errors"
 	"log"
 
-	"github.com/raff/goble/xpc"
+	"github.com/photostorm/gatt/xpc"
 )
 
 type peripheral struct {
@@ -28,7 +28,7 @@ type peripheral struct {
 	quitc chan struct{}
 }
 
-func NewPeripheral(u UUID) Peripheral { return &peripheral{id: copyUUIDToByte16(u.b)} }
+func NewPeripheral(u UUID) Peripheral { return &peripheral{id: xpc.UUID(u.b)} }
 
 func (p *peripheral) Device() Device       { return p.d }
 func (p *peripheral) ID() string           { return p.id.String() }
