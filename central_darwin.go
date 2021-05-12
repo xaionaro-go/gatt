@@ -3,7 +3,7 @@ package gatt
 import (
 	"sync"
 
-	"github.com/photostorm/gatt/xpc"
+	"github.com/raff/goble/xpc"
 )
 
 type central struct {
