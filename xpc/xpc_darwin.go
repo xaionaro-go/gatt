@@ -288,14 +288,14 @@ func valueToXpc(val r.Value) C.xpc_object_t {
 }
 
 //export arraySet
-func arraySet(u C.uintptr_t, i C.int, v C.xpc_object_t) {
-	a := *(*Array)(unsafe.Pointer(uintptr(u)))
+func arraySet(u unsafe.Pointer, i C.int, v C.xpc_object_t) {
+	a := *(*Array)(u)
 	a[i] = xpcToGo(v)
 }
 
 //export dictSet
-func dictSet(u C.uintptr_t, k *C.char, v C.xpc_object_t) {
-	d := *(*Dict)(unsafe.Pointer(uintptr(u)))
+func dictSet(u unsafe.Pointer, k *C.char, v C.xpc_object_t) {
+	d := *(*Dict)(u)
 	d[C.GoString(k)] = xpcToGo(v)
 }
 
@@ -308,8 +308,7 @@ func xpcToGo(v C.xpc_object_t) interface{} {
 	switch t {
 	case C.TYPE_ARRAY:
 		a := make(Array, C.int(C.xpc_array_get_count(v)))
-		p := uintptr(unsafe.Pointer(&a))
-		C.XpcArrayApply(C.uintptr_t(p), v)
+		C.XpcArrayApply(C.uintptr_t(uintptr(unsafe.Pointer(&a))), v)
 		return a
 
 	case C.TYPE_DATA:
@@ -317,8 +316,7 @@ func xpcToGo(v C.xpc_object_t) interface{} {
 
 	case C.TYPE_DICT:
 		d := make(Dict)
-		p := uintptr(unsafe.Pointer(&d))
-		C.XpcDictApply(C.uintptr_t(p), v)
+		C.XpcDictApply(C.uintptr_t(uintptr(unsafe.Pointer(&d))), v)
 		return d
 
 	case C.TYPE_INT64:
