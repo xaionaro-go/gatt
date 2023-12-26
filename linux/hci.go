@@ -314,9 +314,7 @@ func (h *HCI) handleAdvertisement(b []byte) {
 		h.plistmu.Lock()
 		h.plist[addr] = pd
 		h.plistmu.Unlock()
-		if scannable {
-			continue
-		}
+
 		h.AdvertisementHandler(pd)
 	}
 }
