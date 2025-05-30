@@ -2,31 +2,33 @@ package gatt
 
 import (
 	"bytes"
+	"context"
 
-	"github.com/photostorm/gatt/linux/cmd"
+	"github.com/xaionaro-go/gatt/linux/cmd"
 )
 
 func ExampleLnxDeviceID() {
-	NewDevice(LnxDeviceID(-1, true)) // Can only be used with NewDevice.
+	NewDevice(context.Background(), LnxDeviceID(-1, true)) // Can only be used with NewDevice.
 }
 
 func ExampleLnxMaxConnections() {
-	NewDevice(LnxMaxConnections(1)) // Can only be used with NewDevice.
+	NewDevice(context.Background(), LnxMaxConnections(1)) // Can only be used with NewDevice.
 }
 
 func ExampleLnxSetAdvertisingEnable() {
-	d, _ := NewDevice()
-	d.Option(LnxSetAdvertisingEnable(true)) // Can only be used with Option.
+	ctx := context.Background()
+	d, _ := NewDevice(context.Background())
+	d.Option(LnxSetAdvertisingEnable(ctx, true)) // Can only be used with Option.
 }
 
-func ExampleSetAdvertisingData() {
+func ExampleLnxSetAdvertisingData() {
 	// Manually crafting an advertising packet with a type field, and a service uuid - 0xFE01.
 	o := LnxSetAdvertisingData(&cmd.LESetAdvertisingData{
 		AdvertisingDataLength: 6,
 		AdvertisingData:       [31]byte{0x02, 0x01, 0x06, 0x03, 0x01, 0xFE},
 	})
-	d, _ := NewDevice(o) // Can be used with NewDevice.
-	d.Option(o)          // Or dynamically with Option.
+	d, _ := NewDevice(context.Background(), o) // Can be used with NewDevice.
+	d.Option(o)                                // Or dynamically with Option.
 }
 
 func ExampleLnxSetScanResponseData() {
@@ -35,7 +37,7 @@ func ExampleLnxSetScanResponseData() {
 		ScanResponseDataLength: 8,
 		ScanResponseData:       [31]byte{0x07, 0x09, 'G', 'o', 'p', 'h', 'e', 'r'},
 	})
-	d, _ := NewDevice(o)
+	d, _ := NewDevice(context.Background(), o)
 	d.Option(o)
 }
 
@@ -50,21 +52,22 @@ func ExampleLnxSetAdvertisingParameters() {
 		AdvertisingChannelMap:   0x7,       // [0x07] 0x01: ch37, 0x02: ch38, 0x04: ch39
 		AdvertisingFilterPolicy: 0x00,
 	})
-	d, _ := NewDevice(o) // Can be used with NewDevice.
-	d.Option(o)          // Or dynamically with Option.
+	d, _ := NewDevice(context.Background(), o) // Can be used with NewDevice.
+	d.Option(o)                                // Or dynamically with Option.
 }
 
 func ExampleLnxSendHCIRawCommand_predefinedCommand() {
+	ctx := context.Background()
 	// Send a predefined command of cmd package.
 	c := &cmd.LESetScanResponseData{
 		ScanResponseDataLength: 8,
 		ScanResponseData:       [31]byte{0x07, 0x09, 'G', 'o', 'p', 'h', 'e', 'r'},
 	}
-	rsp := bytes.NewBuffer(nil)
-	d, _ := NewDevice()
-	d.Option(LnxSendHCIRawCommand(c, rsp)) // Can only be used with Option
+	resp := bytes.NewBuffer(nil)
+	d, _ := NewDevice(context.Background())
+	d.Option(LnxSendHCIRawCommand(ctx, c, resp)) // Can only be used with Option
 	// Check the return status
-	if rsp.Bytes()[0] != 0x00 {
+	if resp.Bytes()[0] != 0x00 {
 		// Handle errors
 	}
 }
@@ -79,6 +82,7 @@ func (c customCmd) Marshal(b []byte) {
 }
 
 func ExampleLnxSendHCIRawCommand_customCommand() {
+	ctx := context.Background()
 	// customCmd implements cmd.CmdParam as a fake vendor command.
 	//
 	//  type customCmd struct{ ConnectionHandle uint16 }
@@ -94,6 +98,6 @@ func ExampleLnxSendHCIRawCommand_customCommand() {
 	//  }
 	// Send a custom vendor command without checking response.
 	c := &customCmd{ConnectionHandle: 0x40}
-	d, _ := NewDevice()
-	d.Option(LnxSendHCIRawCommand(c, nil)) // Can only be used with Option
+	d, _ := NewDevice(context.Background())
+	d.Option(LnxSendHCIRawCommand(ctx, c, nil)) // Can only be used with Option
 }

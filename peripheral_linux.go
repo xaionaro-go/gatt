@@ -2,15 +2,16 @@ package gatt
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"strings"
 
-	"github.com/photostorm/gatt/linux"
+	"github.com/facebookincubator/go-belt/tool/logger"
+	"github.com/xaionaro-go/gatt/linux"
 )
 
 type peripheral struct {
@@ -21,55 +22,60 @@ type peripheral struct {
 	// A list of invalid service is provided in the parameter.
 	ServicesModified func(*peripheral, []*Service)
 
-	d    *device
-	svcs []*Service
+	d        *device
+	services []*Service
 
 	sub *subscriber
 
 	mtu uint16
 	l2c io.ReadWriteCloser
 
-	reqc  chan message
-	quitc chan struct{}
+	reqCh  chan message
+	quitCh chan struct{}
 
 	pd *linux.PlatData // platform specific data
 }
 
-func (p *peripheral) Device() Device       { return p.d }
-func (p *peripheral) ID() string           { return strings.ToUpper(net.HardwareAddr(p.pd.Address[:]).String()) }
-func (p *peripheral) Name() string         { return p.pd.Name }
-func (p *peripheral) Services() []*Service { return p.svcs }
+func (p *peripheral) Device() Device { return p.d }
+func (p *peripheral) ID() string {
+	return strings.ToUpper(net.HardwareAddr(p.pd.Address[:]).String())
+}
+func (p *peripheral) Name() string                            { return p.pd.Name }
+func (p *peripheral) Services(ctx context.Context) []*Service { return p.services }
 
 func finish(op byte, h uint16, b []byte) (bool, error) {
-	done := b[0] == attOpError && b[1] == op && b[2] == byte(h) && b[3] == byte(h>>8)
+	done := b[0] == attrOpError && b[1] == op && b[2] == byte(h) && b[3] == byte(h>>8)
 	var err error
-	if b[0] == attOpError {
-		err = AttEcode(b[4])
-		if err == AttEcodeAttrNotFound {
+	if b[0] == attrOpError {
+		err = AttrECode(b[4])
+		if err == AttrECodeAttrNotFound {
 			// Expect attribute not found errors
 			err = nil
 		} else {
-			// log.Printf("unexpected protocol error: %s", e)
+			// logger.Debugf(ctx, "unexpected protocol error: %s", e)
 			// FIXME: terminate the connection
 		}
 	}
 	return done, err
 }
 
-func (p *peripheral) DiscoverServices(ds []UUID) ([]*Service, error) {
+func (p *peripheral) DiscoverServices(ctx context.Context, ds []UUID) ([]*Service, error) {
 	// p.pd.Conn.Write([]byte{0x02, 0x87, 0x00}) // MTU
 	done := false
 	start := uint16(0x0001)
 	var err error
 	for !done {
-		op := byte(attOpReadByGroupReq)
+		op := byte(attrOpReadByGroupReq)
 		b := make([]byte, 7)
 		b[0] = op
 		binary.LittleEndian.PutUint16(b[1:3], start)
 		binary.LittleEndian.PutUint16(b[3:5], 0xFFFF)
 		binary.LittleEndian.PutUint16(b[5:7], 0x2800)
 
-		b = p.sendReq(op, b)
+		b, err = p.sendReq(ctx, op, b)
+		if err != nil {
+			return nil, fmt.Errorf("unable to send the request: %w", err)
+		}
 		done, err = finish(op, start, b)
 		if done {
 			break
@@ -93,7 +99,7 @@ func (p *peripheral) DiscoverServices(ds []UUID) ([]*Service, error) {
 					h:    binary.LittleEndian.Uint16(b[:2]),
 					endh: endh,
 				}
-				p.svcs = append(p.svcs, s)
+				p.services = append(p.services, s)
 			}
 
 			b = b[l:]
@@ -101,29 +107,32 @@ func (p *peripheral) DiscoverServices(ds []UUID) ([]*Service, error) {
 			start = endh + 1
 		}
 	}
-	return p.svcs, err
+	return p.services, err
 }
 
-func (p *peripheral) DiscoverIncludedServices(ss []UUID, s *Service) ([]*Service, error) {
+func (p *peripheral) DiscoverIncludedServices(ctx context.Context, ss []UUID, s *Service) ([]*Service, error) {
 	// TODO
 	return nil, nil
 }
 
-func (p *peripheral) DiscoverCharacteristics(cs []UUID, s *Service) ([]*Characteristic, error) {
+func (p *peripheral) DiscoverCharacteristics(ctx context.Context, cs []UUID, s *Service) ([]*Characteristic, error) {
 	done := false
 	start := s.h
 	var prev *Characteristic
 	var err error
 	for !done {
-		op := byte(attOpReadByTypeReq)
+		op := byte(attrOpReadByTypeReq)
 		b := make([]byte, 7)
 		b[0] = op
 		binary.LittleEndian.PutUint16(b[1:3], start)
 		binary.LittleEndian.PutUint16(b[3:5], s.endh)
 		binary.LittleEndian.PutUint16(b[5:7], 0x2803)
 
-		b = p.sendReq(op, b)
-		if done = b[0] != byte(attOpReadByTypeRsp); done {
+		b, err = p.sendReq(ctx, op, b)
+		if err != nil {
+			return nil, fmt.Errorf("unable to send the request: %w", err)
+		}
+		if done = b[0] != byte(attrOpReadByTypeResp); done {
 			break
 		}
 
@@ -140,24 +149,23 @@ func (p *peripheral) DiscoverCharacteristics(cs []UUID, s *Service) ([]*Characte
 			h := binary.LittleEndian.Uint16(b[:2])
 			props := Property(b[2])
 			vh := binary.LittleEndian.Uint16(b[3:5])
-			u := UUID{b[5:l]}
-			s := searchService(p.svcs, h, vh)
-			if s == nil {
-				log.Printf("Can't find service range that contains 0x%04X - 0x%04X", h, vh)
-				return nil, fmt.Errorf("Can't find service range that contains 0x%04X - 0x%04X", h, vh)
+			uuid := UUID{b[5:l]}
+			service := searchService(ctx, p.services, h, vh)
+			if service == nil {
+				return nil, fmt.Errorf("unable to find service range that contains 0x%04X - 0x%04X", h, vh)
 			}
 			c := &Characteristic{
-				uuid:  u,
-				svc:   s,
-				props: props,
-				h:     h,
-				vh:    vh,
+				uuid:    uuid,
+				service: service,
+				props:   props,
+				h:       h,
+				vh:      vh,
 			}
-			if UUIDContains(cs, u) {
-				s.chars = append(s.chars, c)
+			if UUIDContains(cs, uuid) {
+				service.chars = append(service.chars, c)
 			}
 			b = b[l:]
-			done = vh == s.endh
+			done = vh == service.endh
 			start = vh + 1
 			if prev != nil {
 				prev.endh = c.h - 1
@@ -171,21 +179,24 @@ func (p *peripheral) DiscoverCharacteristics(cs []UUID, s *Service) ([]*Characte
 	return s.chars, err
 }
 
-func (p *peripheral) DiscoverDescriptors(ds []UUID, c *Characteristic) ([]*Descriptor, error) {
+func (p *peripheral) DiscoverDescriptors(ctx context.Context, ds []UUID, c *Characteristic) ([]*Descriptor, error) {
 	done := false
 	start := c.vh + 1
 	var err error
 	for !done {
 		if c.endh == 0 {
-			c.endh = c.svc.endh
+			c.endh = c.service.endh
 		}
-		op := byte(attOpFindInfoReq)
+		op := byte(attrOpFindInfoReq)
 		b := make([]byte, 5)
 		b[0] = op
 		binary.LittleEndian.PutUint16(b[1:3], start)
 		binary.LittleEndian.PutUint16(b[3:5], c.endh)
 
-		b = p.sendReq(op, b)
+		b, err = p.sendReq(ctx, op, b)
+		if err != nil {
+			return nil, fmt.Errorf("unable to send the request: %w", err)
+		}
 		done, err = finish(op, start, b)
 		if done {
 			break
@@ -221,24 +232,27 @@ func (p *peripheral) DiscoverDescriptors(ds []UUID, c *Characteristic) ([]*Descr
 	return c.descs, err
 }
 
-func (p *peripheral) ReadCharacteristic(c *Characteristic) ([]byte, error) {
+func (p *peripheral) ReadCharacteristic(ctx context.Context, c *Characteristic) ([]byte, error) {
 	b := make([]byte, 3)
-	op := byte(attOpReadReq)
+	op := byte(attrOpReadReq)
 	b[0] = op
 	binary.LittleEndian.PutUint16(b[1:3], c.vh)
 
-	b = p.sendReq(op, b)
-	_, err := finish(op, c.vh, b)
+	b, err := p.sendReq(ctx, op, b)
+	if err != nil {
+		return nil, fmt.Errorf("unable to send the request: %w", err)
+	}
+	_, err = finish(op, c.vh, b)
 	b = b[1:]
 	return b, err
 }
 
-func (p *peripheral) ReadLongCharacteristic(c *Characteristic) ([]byte, error) {
+func (p *peripheral) ReadLongCharacteristic(ctx context.Context, c *Characteristic) ([]byte, error) {
 	// The spec says that a read blob request should fail if the characteristic
 	// is smaller than mtu - 1.  To simplify the API, the first read is done
 	// with a regular read request.  If the buffer received is equal to mtu -1,
 	// then we read the rest of the data using read blob.
-	firstRead, err := p.ReadCharacteristic(c)
+	firstRead, err := p.ReadCharacteristic(ctx, c)
 	if err != nil {
 		return nil, err
 	}
@@ -250,15 +264,18 @@ func (p *peripheral) ReadLongCharacteristic(c *Characteristic) ([]byte, error) {
 	buf.Write(firstRead)
 	off := uint16(len(firstRead))
 	done := false
-	err = AttEcodeSuccess
+	err = AttrECodeSuccess
 	for {
 		b := make([]byte, 5)
-		op := byte(attOpReadBlobReq)
+		op := byte(attrOpReadBlobReq)
 		b[0] = op
 		binary.LittleEndian.PutUint16(b[1:3], c.vh)
 		binary.LittleEndian.PutUint16(b[3:5], off)
 
-		b = p.sendReq(op, b)
+		b, err = p.sendReq(ctx, op, b)
+		if err != nil {
+			return nil, fmt.Errorf("unable to send the request: %w", err)
+		}
 		done, err = finish(op, c.vh, b)
 		if done {
 			break
@@ -276,52 +293,66 @@ func (p *peripheral) ReadLongCharacteristic(c *Characteristic) ([]byte, error) {
 	return buf.Bytes(), err
 }
 
-func (p *peripheral) WriteCharacteristic(c *Characteristic, value []byte, noRsp bool) error {
+func (p *peripheral) WriteCharacteristic(ctx context.Context, c *Characteristic, value []byte, noResp bool) error {
 	b := make([]byte, 3+len(value))
-	op := byte(attOpWriteReq)
+	op := byte(attrOpWriteReq)
 	b[0] = op
-	if noRsp {
-		b[0] = attOpWriteCmd
+	if noResp {
+		b[0] = attrOpWriteCmd
 	}
 	binary.LittleEndian.PutUint16(b[1:3], c.vh)
 	copy(b[3:], value)
 
-	if noRsp {
-		p.sendCmd(op, b)
+	if noResp {
+		if err := p.sendCmd(ctx, op, b); err != nil {
+			return fmt.Errorf("unable to send the command: %w", err)
+		}
 		return nil
 	}
-	b = p.sendReq(op, b)
-	_, err := finish(op, c.vh, b)
+	b, err := p.sendReq(ctx, op, b)
+	if err != nil {
+		return fmt.Errorf("unable to send the request: %w", err)
+	}
+	_, err = finish(op, c.vh, b)
 	b = b[1:]
+	_ = b
 	return err
 }
 
-func (p *peripheral) ReadDescriptor(d *Descriptor) ([]byte, error) {
+func (p *peripheral) ReadDescriptor(ctx context.Context, d *Descriptor) ([]byte, error) {
 	b := make([]byte, 3)
-	op := byte(attOpReadReq)
+	op := byte(attrOpReadReq)
 	b[0] = op
 	binary.LittleEndian.PutUint16(b[1:3], d.h)
 
-	b = p.sendReq(op, b)
-	_, err := finish(op, d.h, b)
+	b, err := p.sendReq(ctx, op, b)
+	if err != nil {
+		return nil, fmt.Errorf("unable to send the request: %w", err)
+	}
+	_, err = finish(op, d.h, b)
 	b = b[1:]
+	_ = b
 	return b, err
 }
 
-func (p *peripheral) WriteDescriptor(d *Descriptor, value []byte) error {
+func (p *peripheral) WriteDescriptor(ctx context.Context, d *Descriptor, value []byte) error {
 	b := make([]byte, 3+len(value))
-	op := byte(attOpWriteReq)
+	op := byte(attrOpWriteReq)
 	b[0] = op
 	binary.LittleEndian.PutUint16(b[1:3], d.h)
 	copy(b[3:], value)
 
-	b = p.sendReq(op, b)
-	_, err := finish(op, d.h, b)
+	b, err := p.sendReq(ctx, op, b)
+	if err != nil {
+		return fmt.Errorf("unable to send the request: %w", err)
+	}
+	_, err = finish(op, d.h, b)
 	b = b[1:]
+	_ = b
 	return err
 }
 
-func (p *peripheral) setNotifyValue(c *Characteristic, flag uint16,
+func (p *peripheral) setNotifyValue(ctx context.Context, c *Characteristic, flag uint16,
 	f func(*Characteristic, []byte, error)) error {
 	if c.cccd == nil {
 		return errors.New("no cccd") // FIXME
@@ -332,86 +363,113 @@ func (p *peripheral) setNotifyValue(c *Characteristic, flag uint16,
 		p.sub.subscribe(c.vh, func(b []byte, err error) { f(c, b, err) })
 	}
 	b := make([]byte, 5)
-	op := byte(attOpWriteReq)
+	op := byte(attrOpWriteReq)
 	b[0] = op
 	binary.LittleEndian.PutUint16(b[1:3], c.cccd.h)
 	binary.LittleEndian.PutUint16(b[3:5], ccc)
 
-	b = p.sendReq(op, b)
-	_, err := finish(op, c.cccd.h, b)
+	b, err := p.sendReq(ctx, op, b)
+	if err != nil {
+		return fmt.Errorf("unable to send the request: %w", err)
+	}
+	_, err = finish(op, c.cccd.h, b)
 	b = b[1:]
+	_ = b
 	if f == nil {
 		p.sub.unsubscribe(c.vh)
 	}
 	return err
 }
 
-func (p *peripheral) SetNotifyValue(c *Characteristic,
+func (p *peripheral) SetNotifyValue(ctx context.Context, c *Characteristic,
 	f func(*Characteristic, []byte, error)) error {
-	return p.setNotifyValue(c, gattCCCNotifyFlag, f)
+	return p.setNotifyValue(ctx, c, gattCCCNotifyFlag, f)
 }
 
-func (p *peripheral) SetIndicateValue(c *Characteristic,
+func (p *peripheral) SetIndicateValue(ctx context.Context, c *Characteristic,
 	f func(*Characteristic, []byte, error)) error {
-	return p.setNotifyValue(c, gattCCCIndicateFlag, f)
+	return p.setNotifyValue(ctx, c, gattCCCIndicateFlag, f)
 }
 
-func (p *peripheral) ReadRSSI() int {
+func (p *peripheral) ReadRSSI(ctx context.Context) int {
 	// TODO: implement
 	return -1
 }
 
-func searchService(ss []*Service, start, end uint16) *Service {
-	for _, s := range ss {
-		if s.h < start && s.endh >= end {
-			return s
+func searchService(_ context.Context, services []*Service, start, end uint16) *Service {
+	for _, service := range services {
+		if service.h < start && service.endh >= end {
+			return service
 		}
 	}
 	return nil
 }
 
-// TODO: unifiy the message with OS X pots and refactor
+// TODO: unify the message with OS X pots and refactor
 type message struct {
-	op   byte
-	b    []byte
-	rspc chan []byte
+	op     byte
+	b      []byte
+	respCh chan []byte
 }
 
-func (p *peripheral) sendCmd(op byte, b []byte) {
-	p.reqc <- message{op: op, b: b}
+func (p *peripheral) sendCmd(ctx context.Context, op byte, b []byte) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case p.reqCh <- message{op: op, b: b}:
+		return nil
+	}
 }
 
-func (p *peripheral) sendReq(op byte, b []byte) []byte {
-	m := message{op: op, b: b, rspc: make(chan []byte)}
-	p.reqc <- m
-	return <-m.rspc
+func (p *peripheral) sendReq(ctx context.Context, op byte, b []byte) ([]byte, error) {
+	m := message{op: op, b: b, respCh: make(chan []byte)}
+
+	// send
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case p.reqCh <- m:
+	}
+
+	// receive
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case r := <-m.respCh:
+		return r, nil
+	}
 }
 
-func (p *peripheral) loop() {
+func (p *peripheral) loop(ctx context.Context) {
+	logger.Tracef(ctx, "loop")
+	defer logger.Tracef(ctx, "/loop")
+
 	// Serialize the request.
-	rspc := make(chan []byte)
+	respCh := make(chan []byte)
 
 	// Dequeue request loop
 	go func() {
 		for {
 			select {
-			case req := <-p.reqc:
+			case <-ctx.Done():
+				return
+			case req := <-p.reqCh:
 				p.l2c.Write(req.b)
-				if req.rspc == nil {
+				if req.respCh == nil {
 					break
 				}
 
 				for {
-					r := <-rspc
-					reqOp, rspOp := req.b[0], r[0]
-					if rspOp == attRspFor[reqOp] || (rspOp == attOpError && r[1] == reqOp) {
-						req.rspc <- r
+					r := <-respCh
+					reqOp, respOp := req.b[0], r[0]
+					if respOp == attRespFor[reqOp] || (respOp == attrOpError && r[1] == reqOp) {
+						req.respCh <- r
 						break
 					}
-					log.Printf("Request 0x%02x got a mismatched response: 0x%02x", reqOp, rspOp)
-					p.l2c.Write(attErrorRsp(rspOp, 0x0000, AttEcodeReqNotSupp))
+					logger.Debugf(ctx, "request 0x%02x got a mismatched response: 0x%02x", reqOp, respOp)
+					p.l2c.Write(attErrorResp(respOp, 0x0000, AttrECodeReqNotSupp))
 				}
-			case <-p.quitc:
+			case <-p.quitCh:
 				return
 			}
 		}
@@ -425,44 +483,47 @@ func (p *peripheral) loop() {
 	for {
 		n, err := p.l2c.Read(buf)
 		if n == 0 || err != nil {
-			close(p.quitc)
+			close(p.quitCh)
 			return
 		}
 
 		b := make([]byte, n)
 		copy(b, buf)
 
-		if (b[0] != attOpHandleNotify) && (b[0] != attOpHandleInd) {
-			log.Printf("response 0x%x", b[0])
-			rspc <- b
+		if (b[0] != attrOpHandleNotify) && (b[0] != attrOpHandleInd) {
+			logger.Debugf(ctx, "response 0x%x", b[0])
+			respCh <- b
 			continue
 		}
 
 		h := binary.LittleEndian.Uint16(b[1:3])
 		f := p.sub.fn(h)
 		if f == nil {
-			log.Printf("notified by unsubscribed handle")
+			logger.Debugf(ctx, "notified by unsubscribed handle")
 			// FIXME: terminate the connection?
 		} else {
 			go f(b[3:], nil)
 		}
 
-		if b[0] == attOpHandleInd {
-			// write aknowledgement for indication
-			p.l2c.Write([]byte{attOpHandleCnf})
+		if b[0] == attrOpHandleInd {
+			// write acknowledgement for indication
+			p.l2c.Write([]byte{attrOpHandleCnf})
 		}
 
 	}
 }
 
-func (p *peripheral) SetMTU(mtu uint16) error {
+func (p *peripheral) SetMTU(ctx context.Context, mtu uint16) error {
 	b := make([]byte, 3)
-	op := byte(attOpMtuReq)
+	op := byte(attrOpMtuReq)
 	b[0] = op
 	h := uint16(mtu)
 	binary.LittleEndian.PutUint16(b[1:3], h)
 
-	b = p.sendReq(op, b)
+	b, err := p.sendReq(ctx, op, b)
+	if err != nil {
+		return fmt.Errorf("unable to send the request: %w", err)
+	}
 	done, err := finish(op, h, b)
 	if !done {
 		serverMTU := binary.LittleEndian.Uint16(b[1:3])

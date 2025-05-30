@@ -1,94 +1,99 @@
 package linux
 
 import (
+	"context"
 	"errors"
-	"log"
 	"sync"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
 
-	"github.com/photostorm/gatt/linux/gioctl"
-	"github.com/photostorm/gatt/linux/socket"
+	"github.com/facebookincubator/go-belt/tool/logger"
+	"github.com/xaionaro-go/gatt/linux/gioctl"
+	"github.com/xaionaro-go/gatt/linux/socket"
 )
 
 type device struct {
-	fd   int
-	fds  []unix.PollFd
-	dev  int
-	name string
-	rmu  *sync.Mutex
-	wmu  *sync.Mutex
+	fd         int
+	fds        []unix.PollFd
+	id         int
+	name       string
+	readMutex  *sync.Mutex
+	writeMutex *sync.Mutex
 }
 
-func newDevice(n int, chk bool) (*device, error) {
+func newDevice(ctx context.Context, deviceID int, checkFeatureList bool) (*device, error) {
 	fd, err := socket.Socket(socket.AF_BLUETOOTH, unix.SOCK_RAW, socket.BTPROTO_HCI)
 	if err != nil {
-		log.Printf("could not create AF_BLUETOOTH raw socket")
+		logger.Debugf(ctx, "could not create AF_BLUETOOTH raw socket: %v", err)
 		return nil, err
 	}
-	if n != -1 {
-		return newSocket(fd, n, chk)
+	if deviceID != -1 {
+		return newSocket(ctx, fd, deviceID, checkFeatureList)
 	}
 
 	req := devListRequest{devNum: hciMaxDevices}
 	if err := gioctl.Ioctl(uintptr(fd), hciGetDeviceList, uintptr(unsafe.Pointer(&req))); err != nil {
-		log.Printf("hciGetDeviceList failed")
+		logger.Debugf(ctx, "hciGetDeviceList failed: %v", err)
 		return nil, err
 	}
-	log.Printf("got %d devices", req.devNum)
-	for i := 0; i < int(req.devNum); i++ {
-		d, err := newSocket(fd, i, chk)
+	logger.Debugf(ctx, "got %d devices", req.devNum)
+	for deviceID := range int(req.devNum) {
+		device, err := newSocket(ctx, fd, deviceID, checkFeatureList)
 		if err == nil {
-			log.Printf("dev: %s opened", d.name)
-			return d, err
-		} else {
-			log.Printf("error while opening device %d: %v", i, err)
+			logger.Debugf(ctx, "dev: %s opened", device.name)
+			return device, nil
 		}
+		logger.Errorf(ctx, "error while opening device %d: %v", deviceID, err)
 	}
 	return nil, errors.New("no supported devices available")
 }
 
-func newSocket(fd, n int, chk bool) (*device, error) {
-	i := hciDevInfo{id: uint16(n)}
+func newSocket(
+	ctx context.Context,
+	fd int,
+	deviceID int,
+	checkFeatureList bool,
+) (*device, error) {
+	i := hciDevInfo{id: uint16(deviceID)}
 	if err := gioctl.Ioctl(uintptr(fd), hciGetDeviceInfo, uintptr(unsafe.Pointer(&i))); err != nil {
-		log.Printf("hciGetDeviceInfo failed")
+		logger.Debugf(ctx, "hciGetDeviceInfo failed: %v", err)
 		return nil, err
 	}
 	name := string(i.name[:])
 	// Check the feature list returned feature list.
-	if chk && i.features[4]&0x40 == 0 {
+	if checkFeatureList && i.features[4]&0x40 == 0 {
 		err := errors.New("does not support LE")
-		log.Printf("dev: %s %s", name, err)
+		logger.Debugf(ctx, "dev: %s %s", name, err)
 		return nil, err
 	}
-	log.Printf("dev: %s up", name)
-	if err := gioctl.Ioctl(uintptr(fd), hciUpDevice, uintptr(n)); err != nil {
+	logger.Debugf(ctx, "dev: %s up", name)
+	if err := gioctl.Ioctl(uintptr(fd), hciUpDevice, uintptr(deviceID)); err != nil {
 		if err != unix.EALREADY {
 			return nil, err
 		}
-		log.Printf("dev: %s reset", name)
-		if err := gioctl.Ioctl(uintptr(fd), hciResetDevice, uintptr(n)); err != nil {
-			log.Printf("hciResetDevice failed")
+		logger.Debugf(ctx, "dev: %s reset", name)
+		if err := gioctl.Ioctl(uintptr(fd), hciResetDevice, uintptr(deviceID)); err != nil {
+			logger.Debugf(ctx, "hciResetDevice failed: %v", err)
 			return nil, err
 		}
 	}
-	log.Printf("dev: %s down", name)
-	if err := gioctl.Ioctl(uintptr(fd), hciDownDevice, uintptr(n)); err != nil {
+	logger.Debugf(ctx, "dev: %s down", name)
+	if err := gioctl.Ioctl(uintptr(fd), hciDownDevice, uintptr(deviceID)); err != nil {
 		return nil, err
 	}
 
 	// Attempt to use the linux 3.14 feature, if this fails with EINVAL fall back to raw access
 	// on older kernels.
-	sa := socket.SockaddrHCI{Dev: n, Channel: socket.HCI_CHANNEL_USER}
+	sa := socket.SockaddrHCI{Dev: deviceID, Channel: socket.HCI_CHANNEL_USER}
 	if err := socket.Bind(fd, &sa); err != nil {
 		if err != unix.EINVAL {
 			return nil, err
 		}
-		log.Printf("dev: %s can't bind to hci user channel, err: %s.", name, err)
-		sa := socket.SockaddrHCI{Dev: n, Channel: socket.HCI_CHANNEL_RAW}
+		logger.Debugf(ctx, "dev: %s can't bind to hci user channel, err: %s.", name, err)
+		sa := socket.SockaddrHCI{Dev: deviceID, Channel: socket.HCI_CHANNEL_RAW}
 		if err := socket.Bind(fd, &sa); err != nil {
-			log.Printf("dev: %s can't bind to hci raw channel, err: %s.", name, err)
+			logger.Debugf(ctx, "dev: %s can't bind to hci raw channel, err: %s.", name, err)
 			return nil, err
 		}
 	}
@@ -98,22 +103,22 @@ func newSocket(fd, n int, chk bool) (*device, error) {
 	fds[0].Events = unix.POLLIN
 
 	return &device{
-		fd:   fd,
-		fds:  fds,
-		dev:  n,
-		name: name,
-		rmu:  &sync.Mutex{},
-		wmu:  &sync.Mutex{},
+		fd:         fd,
+		fds:        fds,
+		id:         deviceID,
+		name:       name,
+		readMutex:  &sync.Mutex{},
+		writeMutex: &sync.Mutex{},
 	}, nil
 }
 
 func (d device) DevId() int {
-	return d.dev
+	return d.id
 }
 
 func (d device) Read(b []byte) (int, error) {
-	d.rmu.Lock()
-	defer d.rmu.Unlock()
+	d.readMutex.Lock()
+	defer d.readMutex.Unlock()
 	// Use poll to avoid blocking on Read
 	n, err := unix.Poll(d.fds, 100)
 	if n == 0 || err != nil {
@@ -123,12 +128,13 @@ func (d device) Read(b []byte) (int, error) {
 }
 
 func (d device) Write(b []byte) (int, error) {
-	d.wmu.Lock()
-	defer d.wmu.Unlock()
+	d.writeMutex.Lock()
+	defer d.writeMutex.Unlock()
 	return unix.Write(d.fd, b)
 }
 
 func (d device) Close() error {
-	log.Printf("linux.device.Close()")
+	ctx := context.TODO()
+	logger.Debugf(ctx, "linux.device.Close()")
 	return unix.Close(d.fd)
 }

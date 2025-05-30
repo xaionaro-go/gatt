@@ -1,8 +1,8 @@
 package option
 
 import (
-	"github.com/photostorm/gatt"
-	"github.com/photostorm/gatt/linux/cmd"
+	"github.com/xaionaro-go/gatt"
+	"github.com/xaionaro-go/gatt/linux/cmd"
 )
 
 var DefaultClientOptions = []gatt.Option{

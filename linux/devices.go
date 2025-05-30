@@ -1,19 +1,19 @@
 package linux
 
-import "github.com/photostorm/gatt/linux/gioctl"
+import "github.com/xaionaro-go/gatt/linux/gioctl"
 
 const (
 	ioctlSize     = uintptr(4)
 	hciMaxDevices = 16
-	typHCI        = 72 // 'H'
+	typeHCI       = 72 // 'H'
 )
 
 var (
-	hciUpDevice      = gioctl.IoW(typHCI, 201, ioctlSize) // HCIDEVUP
-	hciDownDevice    = gioctl.IoW(typHCI, 202, ioctlSize) // HCIDEVDOWN
-	hciResetDevice   = gioctl.IoW(typHCI, 203, ioctlSize) // HCIDEVRESET
-	hciGetDeviceList = gioctl.IoR(typHCI, 210, ioctlSize) // HCIGETDEVLIST
-	hciGetDeviceInfo = gioctl.IoR(typHCI, 211, ioctlSize) // HCIGETDEVINFO
+	hciUpDevice      = gioctl.IoW(typeHCI, 201, ioctlSize) // HCIDEVUP
+	hciDownDevice    = gioctl.IoW(typeHCI, 202, ioctlSize) // HCIDEVDOWN
+	hciResetDevice   = gioctl.IoW(typeHCI, 203, ioctlSize) // HCIDEVRESET
+	hciGetDeviceList = gioctl.IoR(typeHCI, 210, ioctlSize) // HCIGETDEVLIST
+	hciGetDeviceInfo = gioctl.IoR(typeHCI, 211, ioctlSize) // HCIGETDEVINFO
 )
 
 type devRequest struct {

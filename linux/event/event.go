@@ -1,53 +1,54 @@
-package evt
+package event
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"errors"
 	"fmt"
 
-	"github.com/photostorm/gatt/linux/util"
+	"github.com/xaionaro-go/gatt/linux/util"
 )
 
 type EventHandler interface {
-	HandleEvent([]byte) error
+	HandleEvent(context.Context, []byte) error
 }
 
-type HandlerFunc func(b []byte) error
+type HandlerFunc func(ctx context.Context, b []byte) error
 
-func (f HandlerFunc) HandleEvent(b []byte) error {
-	return f(b)
+func (f HandlerFunc) HandleEvent(ctx context.Context, b []byte) error {
+	return f(ctx, b)
 }
 
-type Evt struct {
-	evtHandlers map[int]EventHandler
+type Event struct {
+	EventHandlers map[int]EventHandler
 }
 
-func NewEvt() *Evt {
-	return &Evt{
-		evtHandlers: map[int]EventHandler{},
+func NewEvent() *Event {
+	return &Event{
+		EventHandlers: map[int]EventHandler{},
 	}
 }
 
-func (e *Evt) HandleEvent(c int, h EventHandler) {
-	e.evtHandlers[c] = h
+func (e *Event) HandleEvent(c int, h EventHandler) {
+	e.EventHandlers[c] = h
 }
 
-func (e *Evt) Dispatch(b []byte) error {
+func (e *Event) Dispatch(ctx context.Context, b []byte) error {
 	h := &EventHeader{}
 	if err := h.Unmarshal(b); err != nil {
 		return err
 	}
 	b = b[2:] // Skip Event Header (uint8 + uint8)
-	if f, found := e.evtHandlers[h.code]; found {
-		e.trace("> HCI Event: %s (0x%02X) plen %d: [ % X ])\n", h.code, uint8(h.code), h.plen, b)
-		return f.HandleEvent(b)
+	if f, found := e.EventHandlers[h.Code]; found {
+		e.trace("> HCI Event: %s (0x%02X) plen %d: [ % X ])\n", h.Code, uint8(h.Code), h.PLen, b)
+		return f.HandleEvent(ctx, b)
 	}
-	e.trace("> HCI Event: no handler for %s (0x%02X)\n", h.code, uint8(h.code))
+	e.trace("> HCI Event: no handler for %s (0x%02X)\n", h.Code, uint8(h.Code))
 	return nil
 }
 
-func (e *Evt) trace(fmt string, v ...interface{}) {}
+func (e *Event) trace(fmt string, v ...any) {}
 
 const (
 	InquiryComplete                              = 0x01 // Inquiry Complete
@@ -58,15 +59,15 @@ const (
 	AuthenticationComplete                       = 0x06 // Authentication
 	RemoteNameReqComplete                        = 0x07 // Remote Name Request Complete
 	EncryptionChange                             = 0x08 // Encryption Change
-	ChangeConnectionLinkKeyComplete              = 0x09 // Change Conection Link Key Complete
-	MasterLinkKeyComplete                        = 0x0A // Master Link Keye Complete
+	ChangeConnectionLinkKeyComplete              = 0x09 // Change Connection Link Key Complete
+	MasterLinkKeyComplete                        = 0x0A // Master Link Key Complete
 	ReadRemoteSupportedFeaturesComplete          = 0x0B // Read Remote Supported Features Complete
 	ReadRemoteVersionInformationComplete         = 0x0C // Read Remote Version Information Complete
 	QoSSetupComplete                             = 0x0D // QoSSetupComplete
 	CommandComplete                              = 0x0E // Command Complete
 	CommandStatus                                = 0x0F // Command status
 	HardwareError                                = 0x10 // Hardware Error
-	FlushOccurred                                = 0x11 // Flush Occured
+	FlushOccurred                                = 0x11 // Flush Occurred
 	RoleChange                                   = 0x12 // Role Change
 	NumberOfCompletedPkts                        = 0x13 // Number Of Completed Packets
 	ModeChange                                   = 0x14 // Mode Change
@@ -78,11 +79,11 @@ const (
 	DataBufferOverflow                           = 0x1A // Data Buffer Overflow
 	MaxSlotsChange                               = 0x1B // Max Slots Change
 	ReadClockOffsetComplete                      = 0x1C // Read Clock Offset Complete
-	ConnectionPtypeChanged                       = 0x1D // Connection Packet Type Changed
+	ConnectionPTypeChanged                       = 0x1D // Connection Packet Type Changed
 	QoSViolation                                 = 0x1E // QoS Violation
 	PageScanRepetitionModeChange                 = 0x20 // Page Scan Repetition Mode Change
 	FlowSpecificationComplete                    = 0x21 // Flow Specification
-	InquiryResultWithRssi                        = 0x22 // Inquery Result with RSSI
+	InquiryResultWithRssi                        = 0x22 // Inquiry Result with RSSI
 	ReadRemoteExtendedFeaturesComplete           = 0x23 // Read Remote Extended Features Complete
 	SyncConnectionComplete                       = 0x2C // Synchronous Connection Complete
 	SyncConnectionChanged                        = 0x2D // Synchronous Connection Changed
@@ -98,7 +99,7 @@ const (
 	LinkSupervisionTimeoutChanged                = 0x38 // Link Supervision Timeout Changed
 	EnhancedFlushComplete                        = 0x39 // Enhanced Flush Complete
 	UserPasskeyNotify                            = 0x3B // User Passkey Notification
-	KeypressNotify                               = 0x3C // Keypass Notification
+	KeypressNotify                               = 0x3C // Keypress Notification
 	RemoteHostFeaturesNotify                     = 0x3D // Remote Host Supported Features Notification
 	LEMeta                                       = 0x3E // LE Meta
 	PhysicalLinkComplete                         = 0x40 // Physical Link Complete
@@ -129,32 +130,32 @@ const (
 type LEEventCode int
 
 const (
-	LEConnectionComplete               LEEventCode = 0x01 // LE Connection Complete
-	LEAdvertisingReport                            = 0x02 // LE Advertising Report
-	LEConnectionUpdateComplete                     = 0x03 // LE Connection Update Complete
-	LEReadRemoteUsedFeaturesComplete               = 0x04 // LE Read Remote Used Features Complete
-	LELTKRequest                                   = 0x05 // LE LTK Request
-	LERemoteConnectionParameterRequest             = 0x06 // LE Remote Connection Parameter Request
+	LEConnectionComplete               = LEEventCode(0x01) // LE Connection Complete
+	LEAdvertisingReport                = LEEventCode(0x02) // LE Advertising Report
+	LEConnectionUpdateComplete         = LEEventCode(0x03) // LE Connection Update Complete
+	LEReadRemoteUsedFeaturesComplete   = LEEventCode(0x04) // LE Read Remote Used Features Complete
+	LELTKRequest                       = LEEventCode(0x05) // LE LTK Request
+	LERemoteConnectionParameterRequest = LEEventCode(0x06) // LE Remote Connection Parameter Request
 )
 
 type EventHeader struct {
-	code int
-	plen uint8
+	Code int
+	PLen uint8
 }
 
 func (h *EventHeader) Unmarshal(b []byte) error {
 	if len(b) < 2 {
 		return errors.New("malformed header")
 	}
-	h.code = int(b[0])
-	h.plen = b[1]
-	if uint8(len(b)) != 2+h.plen {
+	h.Code = int(b[0])
+	h.PLen = b[1]
+	if uint8(len(b)) != 2+h.PLen {
 		return errors.New("wrong length")
 	}
 	return nil
 }
 
-var o = util.Order
+var o = util.BinaryOrder
 
 // Event Parameters
 
@@ -181,9 +182,9 @@ type ConnectionCompleteEP struct {
 }
 
 type ConnectionRequestEP struct {
-	BDAddr        [6]byte
-	ClassofDevice [3]byte
-	LinkType      uint8
+	BDAddr      [6]byte
+	DeviceClass [3]byte
+	LinkType    uint8
 }
 
 type DisconnectionCompleteEP struct {
@@ -245,7 +246,7 @@ func (e *NumberOfCompletedPktsEP) Unmarshal(b []byte) error {
 	n := int(e.NumberOfHandles)
 	buf := bytes.NewBuffer(b[1:])
 	e.Packets = make([]NumOfCompletedPkt, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		binary.Read(buf, binary.LittleEndian, &e.Packets[i].ConnectionHandle)
 		binary.Read(buf, binary.LittleEndian, &e.Packets[i].NumOfCompletedPkts)
 
@@ -317,20 +318,20 @@ func (e *LEAdvertisingReportEP) Unmarshal(b []byte) error {
 		return fmt.Errorf("expected %d more bytes, got %d", (1+1+6+1)*n, len(b))
 	}
 
-	for i := 0; i < n; i++ {
+	for i := range n {
 		e.EventType[i] = o.Uint8(b)
 		b = b[1:]
 	}
-	for i := 0; i < n; i++ {
+	for i := range n {
 		e.AddressType[i] = o.Uint8(b)
 		b = b[1:]
 	}
-	for i := 0; i < n; i++ {
+	for i := range n {
 		e.Address[i] = o.MAC(b)
 		b = b[6:]
 	}
 	var sumLength int
-	for i := 0; i < n; i++ {
+	for i := range n {
 		e.Length[i] = o.Uint8(b)
 		sumLength += int(e.Length[i])
 		b = b[1:]
@@ -340,12 +341,12 @@ func (e *LEAdvertisingReportEP) Unmarshal(b []byte) error {
 		return fmt.Errorf("expected %d more bytes, got %d", sumLength+(1)*n, len(b))
 	}
 
-	for i := 0; i < n; i++ {
+	for i := range n {
 		e.Data[i] = make([]byte, e.Length[i])
 		copy(e.Data[i], b)
 		b = b[e.Length[i]:]
 	}
-	for i := 0; i < n; i++ {
+	for i := range n {
 		e.RSSI[i] = o.Int8(b)
 		b = b[1:]
 	}

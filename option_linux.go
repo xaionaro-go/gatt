@@ -1,10 +1,11 @@
 package gatt
 
 import (
+	"context"
 	"errors"
 	"io"
 
-	"github.com/photostorm/gatt/linux/cmd"
+	"github.com/xaionaro-go/gatt/linux/cmd"
 )
 
 // LnxDeviceID specifies which HCI device to use.
@@ -33,16 +34,16 @@ func LnxMaxConnections(n int) Option {
 
 // LnxSetAdvertisingEnable sets the advertising data to the HCI device.
 // This option can be used with Option on Linux implementation.
-func LnxSetAdvertisingEnable(en bool) Option {
+func LnxSetAdvertisingEnable(ctx context.Context, en bool) Option {
 	return func(d Device) error {
 		dd := d.(*device)
 		if dd == nil {
 			return errors.New("device is not initialized")
 		}
-		if err := dd.update(); err != nil {
+		if err := dd.update(ctx); err != nil {
 			return err
 		}
-		return dd.hci.SetAdvertiseEnable(en)
+		return dd.hci.SetAdvertiseEnable(ctx, en)
 	}
 }
 
@@ -84,13 +85,13 @@ func LnxSetScanningParameters(c *cmd.LESetScanParameters) Option {
 
 // LnxSendHCIRawCommand sends a raw command to the HCI device
 // This option can be used with NewDevice or Option on Linux implementation.
-func LnxSendHCIRawCommand(c cmd.CmdParam, rsp io.Writer) Option {
+func LnxSendHCIRawCommand(ctx context.Context, c cmd.CmdParam, resp io.Writer) Option {
 	return func(d Device) error {
-		b, err := d.(*device).SendHCIRawCommand(c)
-		if rsp == nil {
+		b, err := d.(*device).SendHCIRawCommand(ctx, c)
+		if resp == nil {
 			return err
 		}
-		rsp.Write(b)
+		resp.Write(b)
 		return err
 	}
 }

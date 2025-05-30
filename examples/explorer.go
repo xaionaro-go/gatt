@@ -1,34 +1,37 @@
-// +build
+//go:build ignore
+// +build ignore
 
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
-	"log"
+
 	"os"
 	"strings"
 	"time"
 
-	"github.com/photostorm/gatt"
-	"github.com/photostorm/gatt/examples/option"
+	"github.com/facebookincubator/go-belt/tool/logger"
+	"github.com/xaionaro-go/gatt"
+	"github.com/xaionaro-go/gatt/examples/option"
 )
 
 var done = make(chan struct{})
 
-func onStateChanged(d gatt.Device, s gatt.State) {
+func onStateChanged(ctx context.Context, d gatt.Device, s gatt.State) {
 	fmt.Println("State:", s)
 	switch s {
 	case gatt.StatePoweredOn:
 		fmt.Println("Scanning...")
-		d.Scan([]gatt.UUID{}, false)
+		d.Scan(ctx, []gatt.UUID{}, false)
 		return
 	default:
 		d.StopScanning()
 	}
 }
 
-func onPeriphDiscovered(p gatt.Peripheral, a *gatt.Advertisement, rssi int) {
+func onPeriphDiscovered(ctx context.Context, p gatt.Peripheral, a *gatt.Advertisement, rssi int) {
 	id := strings.ToUpper(flag.Args()[0])
 	if strings.ToUpper(p.ID()) != id {
 		return
@@ -44,19 +47,19 @@ func onPeriphDiscovered(p gatt.Peripheral, a *gatt.Advertisement, rssi int) {
 	fmt.Println("  Service Data      =", a.ServiceData)
 	fmt.Println("")
 
-	p.Device().Connect(p)
+	p.Device().Connect(ctx, p)
 }
 
-func onPeriphConnected(p gatt.Peripheral, err error) {
+func onPeriphConnected(ctx context.Context, p gatt.Peripheral, err error) {
 	fmt.Println("Connected")
-	defer p.Device().CancelConnection(p)
+	defer p.Device().CancelConnection(ctx, p)
 
-	if err := p.SetMTU(500); err != nil {
+	if err := p.SetMTU(ctx, 500); err != nil {
 		fmt.Printf("Failed to set MTU, err: %s\n", err)
 	}
 
 	// Discovery services
-	ss, err := p.DiscoverServices(nil)
+	ss, err := p.DiscoverServices(ctx, nil)
 	if err != nil {
 		fmt.Printf("Failed to discover services, err: %s\n", err)
 		return
@@ -70,7 +73,7 @@ func onPeriphConnected(p gatt.Peripheral, err error) {
 		fmt.Println(msg)
 
 		// Discovery characteristics
-		cs, err := p.DiscoverCharacteristics(nil, s)
+		cs, err := p.DiscoverCharacteristics(ctx, nil, s)
 		if err != nil {
 			fmt.Printf("Failed to discover characteristics, err: %s\n", err)
 			continue
@@ -86,7 +89,7 @@ func onPeriphConnected(p gatt.Peripheral, err error) {
 
 			// Read the characteristic, if possible.
 			if (c.Properties() & gatt.CharRead) != 0 {
-				b, err := p.ReadCharacteristic(c)
+				b, err := p.ReadCharacteristic(ctx, c)
 				if err != nil {
 					fmt.Printf("Failed to read characteristic, err: %s\n", err)
 					continue
@@ -95,7 +98,7 @@ func onPeriphConnected(p gatt.Peripheral, err error) {
 			}
 
 			// Discovery descriptors
-			ds, err := p.DiscoverDescriptors(nil, c)
+			ds, err := p.DiscoverDescriptors(ctx, nil, c)
 			if err != nil {
 				fmt.Printf("Failed to discover descriptors, err: %s\n", err)
 				continue
@@ -109,7 +112,7 @@ func onPeriphConnected(p gatt.Peripheral, err error) {
 				fmt.Println(msg)
 
 				// Read descriptor (could fail, if it's not readable)
-				b, err := p.ReadDescriptor(d)
+				b, err := p.ReadDescriptor(ctx, d)
 				if err != nil {
 					fmt.Printf("Failed to read descriptor, err: %s\n", err)
 					continue
@@ -122,7 +125,7 @@ func onPeriphConnected(p gatt.Peripheral, err error) {
 				f := func(c *gatt.Characteristic, b []byte, err error) {
 					fmt.Printf("notified: % X | %q\n", b, b)
 				}
-				if err := p.SetNotifyValue(c, f); err != nil {
+				if err := p.SetNotifyValue(ctx, c, f); err != nil {
 					fmt.Printf("Failed to subscribe characteristic, err: %s\n", err)
 					continue
 				}
@@ -132,35 +135,37 @@ func onPeriphConnected(p gatt.Peripheral, err error) {
 		fmt.Println()
 	}
 
-	fmt.Printf("Waiting for 5 seconds to get some notifiations, if any.\n")
+	fmt.Printf("Waiting for 5 seconds to get some notifications, if any.\n")
 	time.Sleep(5 * time.Second)
 }
 
-func onPeriphDisconnected(p gatt.Peripheral, err error) {
+func onPeriphDisconnected(ctx context.Context, p gatt.Peripheral, err error) {
 	fmt.Println("Disconnected")
 	close(done)
 }
 
 func main() {
+	ctx := context.Background()
 	flag.Parse()
 	if len(flag.Args()) != 1 {
-		log.Fatalf("usage: %s [options] peripheral-id\n", os.Args[0])
+		logger.Fatalf(ctx, "usage: %s [options] peripheral-id\n", os.Args[0])
 	}
 
-	d, err := gatt.NewDevice(option.DefaultClientOptions...)
+	d, err := gatt.NewDevice(ctx, option.DefaultClientOptions...)
 	if err != nil {
-		log.Fatalf("Failed to open device, err: %s\n", err)
+		logger.Fatalf(ctx, "failed to open device, err: %s\n", err)
 		return
 	}
 
 	// Register handlers.
 	d.Handle(
+		ctx,
 		gatt.PeripheralDiscovered(onPeriphDiscovered),
 		gatt.PeripheralConnected(onPeriphConnected),
 		gatt.PeripheralDisconnected(onPeriphDisconnected),
 	)
 
-	d.Init(onStateChanged)
+	d.Start(ctx, onStateChanged)
 	<-done
 	fmt.Println("Done")
 }

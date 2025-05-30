@@ -1,22 +1,26 @@
 package gatt
 
-import "log"
+import (
+	"context"
+
+	"github.com/facebookincubator/go-belt/tool/logger"
+)
 
 // attr is a BLE attribute. It is not exported;
 // managing attributes is an implementation detail.
 type attr struct {
 	h      uint16   // attribute handle
 	typ    UUID     // attribute type in UUID
-	props  Property // attripute property
+	props  Property // attribute property
 	secure Property // attribute secure (implementation specific usage)
 	value  []byte   // attribute value
 
-	pvt interface{} // point to the corresponsing Serveice/Characteristic/Descriptor
+	pvt any // point to the corresponding Service/Characteristic/Descriptor; TODO: what "pvt" means exactly?
 }
 
 // A attrRange is a contiguous range of attributes.
 type attrRange struct {
-	aa   []attr
+	aa   []attr // TODO: what is "aa"?
 	base uint16 // handle for first attr in aa
 }
 
@@ -51,43 +55,43 @@ func (r *attrRange) At(h uint16) (a attr, ok bool) {
 // return an empty slice. Subrange does not panic for
 // out-of-range start or end.
 func (r *attrRange) Subrange(start, end uint16) []attr {
-	startidx := r.idx(int(start))
-	switch startidx {
+	startIdx := r.idx(int(start))
+	switch startIdx {
 	case tooSmall:
-		startidx = 0
+		startIdx = 0
 	case tooLarge:
 		return []attr{}
 	}
 
-	endidx := r.idx(int(end) + 1) // [start, end] includes its upper bound!
-	switch endidx {
+	endIdx := r.idx(int(end) + 1) // [start, end] includes its upper bound!
+	switch endIdx {
 	case tooSmall:
 		return []attr{}
 	case tooLarge:
-		endidx = len(r.aa)
+		endIdx = len(r.aa)
 	}
-	return r.aa[startidx:endidx]
+	return r.aa[startIdx:endIdx]
 }
 
-func dumpAttributes(aa []attr) {
-	log.Printf("Generating attribute table:")
-	log.Printf("handle\ttype\tprops\tsecure\tpvt\tvalue")
+func dumpAttributes(ctx context.Context, aa []attr) {
+	logger.Debugf(ctx, "Generating attribute table:")
+	logger.Debugf(ctx, "handle\ttype\tprops\tsecure\tpvt\tvalue")
 	for _, a := range aa {
-		log.Printf("0x%04X\t0x%s\t0x%02X\t0x%02x\t%T\t[ % X ]",
+		logger.Debugf(ctx, "0x%04X\t0x%s\t0x%02X\t0x%02x\t%T\t[ % X ]",
 			a.h, a.typ, int(a.props), int(a.secure), a.pvt, a.value)
 	}
 }
 
-func generateAttributes(ss []*Service, base uint16) *attrRange {
+func generateAttributes(ctx context.Context, services []*Service, base uint16) *attrRange {
 	var aa []attr
 	h := base
-	last := len(ss) - 1
-	for i, s := range ss {
+	last := len(services) - 1
+	for i, s := range services {
 		var a []attr
 		h, a = generateServiceAttributes(s, h, i == last)
 		aa = append(aa, a...)
 	}
-	dumpAttributes(aa)
+	dumpAttributes(ctx, aa)
 	return &attrRange{aa: aa, base: base}
 }
 
@@ -156,8 +160,8 @@ func generateDescAttributes(d *Descriptor, h uint16) attr {
 		props: d.props,
 		pvt:   d,
 	}
-	if len(d.valuestr) > 0 {
-		a.value = []byte(d.valuestr)
+	if len(d.valueStr) > 0 {
+		a.value = []byte(d.valueStr)
 	}
 	return a
 }

@@ -33,13 +33,13 @@ const (
 
 var (
 	ErrSocketOpenFailed  = errors.New("unable to open bluetooth socket to device")
-	ErrSocketBindTimeout = errors.New("timeout occured binding to bluetooth device")
+	ErrSocketBindTimeout = errors.New("timeout occurred binding to bluetooth device")
 )
 
-type _Socklen uint32
+type SockLen uint32
 
 type Sockaddr interface {
-	sockaddr() (ptr unsafe.Pointer, len _Socklen, err error) // lowercase; only we can define Sockaddrs
+	sockaddr() (ptr unsafe.Pointer, len SockLen, err error) // lowercase; only we can define Sockaddrs
 }
 
 type rawSockaddrHCI struct {
@@ -56,21 +56,18 @@ type SockaddrHCI struct {
 
 const sizeofSockaddrHCI = unsafe.Sizeof(rawSockaddrHCI{})
 
-func (sa *SockaddrHCI) sockaddr() (unsafe.Pointer, _Socklen, error) {
+func (sa *SockaddrHCI) sockaddr() (unsafe.Pointer, SockLen, error) {
 	if sa.Dev < 0 || sa.Dev > 0xFFFF {
-		return nil, 0, syscall.EINVAL
-	}
-	if sa.Channel < 0 || sa.Channel > 0xFFFF {
 		return nil, 0, syscall.EINVAL
 	}
 	sa.raw.Family = AF_BLUETOOTH
 	sa.raw.Dev = uint16(sa.Dev)
 	sa.raw.Channel = sa.Channel
-	return unsafe.Pointer(&sa.raw), _Socklen(sizeofSockaddrHCI), nil
+	return unsafe.Pointer(&sa.raw), SockLen(sizeofSockaddrHCI), nil
 }
 
 func Socket(domain, typ, proto int) (int, error) {
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		if fd, err := syscall.Socket(domain, typ, proto); err == nil || err != syscall.EBUSY {
 			return fd, err
 		}
@@ -84,7 +81,7 @@ func Bind(fd int, sa Sockaddr) (err error) {
 	if err != nil {
 		return err
 	}
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		if err = bind(fd, ptr, n); err == nil || err != syscall.EBUSY {
 			return err
 		}
@@ -113,7 +110,7 @@ const (
 type HCIFilter struct {
 	TypeMask  uint32
 	EventMask [2]uint32
-	opcode    uint16
+	opCode    uint16
 }
 
 func SetsockoptFilter(fd int, f *HCIFilter) (err error) {

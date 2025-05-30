@@ -1,6 +1,7 @@
 package gatt
 
 import (
+	"context"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -10,12 +11,12 @@ import (
 )
 
 type testHandler struct {
-	readc  chan []byte
-	writec chan []byte
+	readCh  chan []byte
+	writeCh chan []byte
 }
 
 func (t *testHandler) Read(b []byte) (int, error) {
-	r := <-t.readc
+	r := <-t.readCh
 	if len(r) > len(b) {
 		panic("fix this annoyance properly")
 	}
@@ -24,32 +25,33 @@ func (t *testHandler) Read(b []byte) (int, error) {
 }
 
 func (t *testHandler) Write(b []byte) (int, error) {
-	t.writec <- b
+	t.writeCh <- b
 	return len(b), nil
 }
 
 func (t *testHandler) Close() error { return nil }
 
 func TestServing(t *testing.T) {
-	h := &testHandler{readc: make(chan []byte), writec: make(chan []byte)}
+	ctx := context.Background()
+	h := &testHandler{readCh: make(chan []byte), writeCh: make(chan []byte)}
 
 	var wrote []byte
 
 	svc := &Service{uuid: MustParseUUID("09fc95c0-c111-11e3-9904-0002a5d5c51b")}
 
 	svc.AddCharacteristic(MustParseUUID("11fac9e0-c111-11e3-9246-0002a5d5c51b")).HandleReadFunc(
-		func(resp ResponseWriter, req *ReadRequest) {
+		func(ctx context.Context, resp ResponseWriter, req *ReadRequest) {
 			io.WriteString(resp, "count: 1")
 		})
 
 	svc.AddCharacteristic(MustParseUUID("16fe0d80-c111-11e3-b8c8-0002a5d5c51b")).HandleWriteFunc(
-		func(r Request, data []byte) (status byte) {
+		func(ctx context.Context, r Request, data []byte) (status byte) {
 			wrote = data
 			return StatusSuccess
 		})
 
 	svc.AddCharacteristic(MustParseUUID("1c927b50-c116-11e3-8a33-0800200c9a66")).HandleNotifyFunc(
-		func(r Request, n Notifier) {
+		func(ctx context.Context, r Request, n Notifier) {
 			go func() {
 				count := 0
 				for !n.Done() {
@@ -66,7 +68,7 @@ func TestServing(t *testing.T) {
 
 	longString := "A really long characteristic"
 	svc.AddCharacteristic(MustParseUUID("11fac9e0-c111-11e3-9246-0002a5d5c51c")).HandleReadFunc(
-		func(resp ResponseWriter, req *ReadRequest) {
+		func(ctx context.Context, resp ResponseWriter, req *ReadRequest) {
 			start := req.Offset
 			end := req.Offset + req.Cap
 			if len(longString) < start {
@@ -81,14 +83,14 @@ func TestServing(t *testing.T) {
 
 	svc.AddCharacteristic(MustParseUUID("11fac9e0-c111-11e3-9246-0002a5d5c51d")).SetValue([]byte(longString))
 
-	gapSvc := NewService(attrGAPUUID)
+	gapService := NewService(attrGAPUUID)
 
-	gapSvc.AddCharacteristic(attrDeviceNameUUID).SetValue([]byte("Gopher"))
-	gapSvc.AddCharacteristic(attrAppearanceUUID).SetValue([]byte{0x00, 0x80})
-	gattSvc := NewService(attrGATTUUID)
+	gapService.AddCharacteristic(attrDeviceNameUUID).SetValue([]byte("Gopher"))
+	gapService.AddCharacteristic(attrAppearanceUUID).SetValue([]byte{0x00, 0x80})
+	gattService := NewService(attrGATTUUID)
 
-	a := generateAttributes([]*Service{gapSvc, gattSvc, svc}, uint16(1)) // ble a start at 1
-	go newCentral(a, net.HardwareAddr{}, h).loop()
+	a := generateAttributes(ctx, []*Service{gapService, gattService, svc}, uint16(1)) // ble a start at 1
+	go newCentral(a, net.HardwareAddr{}, h).loop(ctx)
 
 	// 0x0001	0x2800	0x02	0x00	*gatt.Service	[ 00 18 ]
 	// 0x0002	0x2803	0x02	0x00	*gatt.Characteristic	[ 02 03 00 00 2A ]
@@ -108,7 +110,7 @@ func TestServing(t *testing.T) {
 	// 0x0010	0x11fac9e0c11111e392460002a5d5c51c	0x02	0x00	*gatt.Characteristic	[  ]
 	// 0x0011	0x2803	0x02	0x00	*gatt.Characteristic	[ 02 12 00 1D C5 D5 A5 02 00 46 92 E3 11 11 C1 E0 C9 FA 11 ]
 	// 0x0012	0x11fac9e0c11111e392460002a5d5c51d	0x02	0x00	*gatt.Characteristic	[ 41 20 72 65 61 6C 6C 79 20 6C 6F 6E 67 20 63 68 61 72 61 63 74 65 72 69 73 74 69 63 ]
-	rxtx := []struct {
+	testCases := []struct {
 		name  string
 		send  string
 		want  string
@@ -238,18 +240,18 @@ func TestServing(t *testing.T) {
 		},
 	}
 
-	for _, tt := range rxtx {
-		s, _ := hex.DecodeString(tt.send)
-		if tt.send != "" {
-			h.readc <- s
+	for _, testCase := range testCases {
+		s, _ := hex.DecodeString(testCase.send)
+		if testCase.send != "" {
+			h.readCh <- s
 		}
-		got := hex.EncodeToString(<-h.writec)
-		if got != tt.want {
-			t.Errorf("%s: sent %s got %s want %s", tt.name, tt.send, got, tt.want)
+		got := hex.EncodeToString(<-h.writeCh)
+		if got != testCase.want {
+			t.Errorf("%s: sent %s got %s want %s", testCase.name, testCase.send, got, testCase.want)
 			continue
 		}
-		if tt.after != nil {
-			tt.after()
+		if testCase.after != nil {
+			testCase.after()
 		}
 	}
 }

@@ -2,13 +2,17 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
-	"log"
 
-	"github.com/photostorm/gatt/linux/evt"
-	"github.com/photostorm/gatt/linux/util"
+	"slices"
+
+	"github.com/facebookincubator/go-belt/tool/logger"
+	"github.com/xaionaro-go/gatt/linux/consts"
+	"github.com/xaionaro-go/gatt/linux/event"
+	"github.com/xaionaro-go/gatt/linux/util"
 )
 
 type CmdParam interface {
@@ -17,14 +21,14 @@ type CmdParam interface {
 	Len() int
 }
 
-func NewCmd(d io.Writer) *Cmd {
+func NewCmd(ctx context.Context, d io.Writer) *Cmd {
 	c := &Cmd{
-		dev:     d,
-		sent:    []*cmdPkt{},
-		compc:   make(chan evt.CommandCompleteEP),
-		statusc: make(chan evt.CommandStatusEP),
+		dev:      d,
+		sent:     []*cmdPkt{},
+		compCh:   make(chan event.CommandCompleteEP),
+		statusCh: make(chan event.CommandStatusEP),
 	}
-	go c.processCmdEvents()
+	go c.processCmdEvents(ctx)
 	return c
 }
 
@@ -36,7 +40,7 @@ type cmdPkt struct {
 
 func (c cmdPkt) Marshal() []byte {
 	b := make([]byte, 1+2+1+c.cp.Len())
-	b[0] = byte(0x1) // typCommandPkt
+	b[0] = byte(consts.PacketTypeCommand)
 	b[1] = byte(c.op)
 	b[2] = byte(c.op >> 8)
 	b[3] = byte(c.cp.Len())
@@ -45,33 +49,31 @@ func (c cmdPkt) Marshal() []byte {
 }
 
 type Cmd struct {
-	dev     io.Writer
-	sent    []*cmdPkt
-	compc   chan evt.CommandCompleteEP
-	statusc chan evt.CommandStatusEP
+	dev      io.Writer
+	sent     []*cmdPkt
+	compCh   chan event.CommandCompleteEP
+	statusCh chan event.CommandStatusEP
 }
 
-func (c Cmd) trace(fmt string, v ...interface{}) {}
-
-func (c *Cmd) HandleComplete(b []byte) error {
-	var e evt.CommandCompleteEP
+func (c *Cmd) HandleComplete(ctx context.Context, b []byte) error {
+	var e event.CommandCompleteEP
 	if err := e.Unmarshal(b); err != nil {
 		return err
 	}
-	c.compc <- e
+	c.compCh <- e
 	return nil
 }
 
-func (c *Cmd) HandleStatus(b []byte) error {
-	var e evt.CommandStatusEP
+func (c *Cmd) HandleStatus(ctx context.Context, b []byte) error {
+	var e event.CommandStatusEP
 	if err := e.Unmarshal(b); err != nil {
 		return err
 	}
-	c.statusc <- e
+	c.statusCh <- e
 	return nil
 }
 
-func (c *Cmd) Send(cp CmdParam) ([]byte, error) {
+func (c *Cmd) Send(ctx context.Context, cp CmdParam) ([]byte, error) {
 	op := cp.Opcode()
 	p := &cmdPkt{op: op, cp: cp, done: make(chan []byte)}
 	raw := p.Marshal()
@@ -80,13 +82,18 @@ func (c *Cmd) Send(cp CmdParam) ([]byte, error) {
 	if n, err := c.dev.Write(raw); err != nil {
 		return nil, err
 	} else if n != len(raw) {
-		return nil, errors.New("Failed to send whole Cmd pkt to HCI socket")
+		return nil, errors.New("failed to send whole Cmd pkt to HCI socket")
 	}
-	return <-p.done, nil
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case r := <-p.done:
+		return r, nil
+	}
 }
 
-func (c *Cmd) SendAndCheckResp(cp CmdParam, exp []byte) error {
-	rsp, err := c.Send(cp)
+func (c *Cmd) SendAndCheckResp(ctx context.Context, cp CmdParam, exp []byte) error {
+	resp, err := c.Send(ctx, cp)
 	if err != nil {
 		return err
 	}
@@ -95,40 +102,40 @@ func (c *Cmd) SendAndCheckResp(cp CmdParam, exp []byte) error {
 		return nil
 	}
 	// Check the if status is one of the expected value
-	if !bytes.Contains(exp, rsp[0:1]) {
-		return fmt.Errorf("HCI command: '0x%04x' return 0x%02X, expect: [%X] ", cp.Opcode(), rsp[0], exp)
+	if !bytes.Contains(exp, resp[0:1]) {
+		return fmt.Errorf("HCI command: '0x%04x' return 0x%02X, expect: [%X] ", cp.Opcode(), resp[0], exp)
 	}
 	return nil
 }
 
-func (c *Cmd) processCmdEvents() {
+func (c *Cmd) processCmdEvents(ctx context.Context) {
 	for {
 		select {
-		case status := <-c.statusc:
+		case status := <-c.statusCh:
 			found := false
 			for i, p := range c.sent {
 				if uint16(p.op) == status.CommandOpcode {
 					found = true
-					c.sent = append(c.sent[:i], c.sent[i+1:]...)
+					c.sent = slices.Delete(c.sent, i, i+1)
 					close(p.done)
 					break
 				}
 			}
 			if !found {
-				log.Printf("Can't find the cmdPkt for this CommandStatusEP: %v", status)
+				logger.Debugf(ctx, "cannot find the cmdPkt for this CommandStatusEP: %v", status)
 			}
-		case comp := <-c.compc:
+		case comp := <-c.compCh:
 			found := false
 			for i, p := range c.sent {
 				if uint16(p.op) == comp.CommandOPCode {
 					found = true
-					c.sent = append(c.sent[:i], c.sent[i+1:]...)
+					c.sent = slices.Delete(c.sent, i, i+1)
 					p.done <- comp.ReturnParameters
 					break
 				}
 			}
 			if !found {
-				log.Printf("Can't find the cmdPkt for this CommandCompleteEP: %v", comp)
+				logger.Debugf(ctx, "cannot find the cmdPkt for this CommandCompleteEP: %v", comp)
 			}
 		}
 	}
@@ -159,7 +166,7 @@ const (
 	opLinkKeyNegReply        = linkCtl<<10 | 0x000C // Link Key Request Negative Reply
 	opPinCodeReply           = linkCtl<<10 | 0x000D // PIN Code Request Reply
 	opPinCodeNegReply        = linkCtl<<10 | 0x000E // PIN Code Request Negative Reply
-	opSetConnPtype           = linkCtl<<10 | 0x000F // Change Connection Packet Type
+	opSetConnPType           = linkCtl<<10 | 0x000F // Change Connection Packet Type
 	opAuthRequested          = linkCtl<<10 | 0x0011 // Authentication Request
 	opSetConnEncrypt         = linkCtl<<10 | 0x0013 // Set Connection Encryption
 	opChangeConnLinkKey      = linkCtl<<10 | 0x0015 // Change Connection Link Key
@@ -172,8 +179,8 @@ const (
 	opReadClockOffset        = linkCtl<<10 | 0x001F // Read Clock Offset
 	opReadLMPHandle          = linkCtl<<10 | 0x0020 // Read LMP Handle
 	opSetupSyncConn          = linkCtl<<10 | 0x0028 // Setup Synchronous Connection
-	opAcceptSyncConnReq      = linkCtl<<10 | 0x0029 // Aceept Synchronous Connection
-	opRejectSyncConnReq      = linkCtl<<10 | 0x002A // Recject Synchronous Connection
+	opAcceptSyncConnReq      = linkCtl<<10 | 0x0029 // Accept Synchronous Connection
+	opRejectSyncConnReq      = linkCtl<<10 | 0x002A // Reject Synchronous Connection
 	opIOCapabilityReply      = linkCtl<<10 | 0x002B // IO Capability Request Reply
 	opUserConfirmReply       = linkCtl<<10 | 0x002C // User Confirmation Request Reply
 	opUserConfirmNegReply    = linkCtl<<10 | 0x002D // User Confirmation Negative Reply
@@ -269,7 +276,7 @@ const (
 	opReadPageScanType                  = hostCtl<<10 | 0x0046 // Read Page Scan Type
 	opWritePageScanType                 = hostCtl<<10 | 0x0047 // Write Page Scan Type
 	opReadAFHMode                       = hostCtl<<10 | 0x0048 // Read AFH Channel Assessment Mode
-	opWriteAFHMode                      = hostCtl<<10 | 0x0049 // Write AFH Channel Assesment Mode
+	opWriteAFHMode                      = hostCtl<<10 | 0x0049 // Write AFH Channel Assessment Mode
 	opReadExtInquiryResponse            = hostCtl<<10 | 0x0051 // Read Extended Inquiry Response
 	opWriteExtInquiryResponse           = hostCtl<<10 | 0x0052 // Write Extended Inquiry Response
 	opRefreshEncryptionKey              = hostCtl<<10 | 0x0053 // Refresh Encryption Key
@@ -289,7 +296,7 @@ const (
 	opWriteLocationData                 = hostCtl<<10 | 0x0065 // Write Location Data
 	opReadFlowControlMode               = hostCtl<<10 | 0x0066 // Read Flow Control Mode
 	opWriteFlowControlMode              = hostCtl<<10 | 0x0067 // Write Flow Control Mode
-	opReadEnhancedTransmitpowerLevel    = hostCtl<<10 | 0x0068 // Read Enhanced Transmit Power Level
+	opReadEnhancedTransmitPowerLevel    = hostCtl<<10 | 0x0068 // Read Enhanced Transmit Power Level
 	opReadBestEffortFlushTimeout        = hostCtl<<10 | 0x0069 // Read Best Effort Flush Timeout
 	opWriteBestEffortFlushTimeout       = hostCtl<<10 | 0x006A // Write Best Effort Flush Timeout
 	opReadLEHostSupported               = hostCtl<<10 | 0x006C // Read LE Host Supported
@@ -319,10 +326,10 @@ const (
 	opLESetScanEnable                     = leCtl<<10 | 0x000c // LE Set Scan Enable
 	opLECreateConn                        = leCtl<<10 | 0x000d // LE Create Connection
 	opLECreateConnCancel                  = leCtl<<10 | 0x000e // LE Create Connection Cancel
-	opLEReadWhiteListSize                 = leCtl<<10 | 0x000f // LE Read White List Size
-	opLEClearWhiteList                    = leCtl<<10 | 0x0010 // LE Clear White List
-	opLEAddDeviceToWhiteList              = leCtl<<10 | 0x0011 // LE Add Device To White List
-	opLERemoveDeviceFromWhiteList         = leCtl<<10 | 0x0012 // LE Remove Device From White List
+	opLEReadAllowListSize                 = leCtl<<10 | 0x000f // LE Read Allow List Size
+	opLEClearAllowList                    = leCtl<<10 | 0x0010 // LE Clear Allow List
+	opLEAddDeviceToAllowList              = leCtl<<10 | 0x0011 // LE Add Device To Allow List
+	opLERemoveDeviceFromAllowList         = leCtl<<10 | 0x0012 // LE Remove Device From Allow List
 	opLEConnUpdate                        = leCtl<<10 | 0x0013 // LE Connection Update
 	opLESetHostChannelClassification      = leCtl<<10 | 0x0014 // LE Set Host Channel Classification
 	opLEReadChannelMap                    = leCtl<<10 | 0x0015 // LE Read Channel Map
@@ -333,14 +340,14 @@ const (
 	opLELTKReply                          = leCtl<<10 | 0x001a // LE Long Term Key Request Reply
 	opLELTKNegReply                       = leCtl<<10 | 0x001b // LE Long Term Key Request Negative Reply
 	opLEReadSupportedStates               = leCtl<<10 | 0x001c // LE Read Supported States
-	opLEReceiverTest                      = leCtl<<10 | 0x001d // LE Reciever Test
+	opLEReceiverTest                      = leCtl<<10 | 0x001d // LE Receiver Test
 	opLETransmitterTest                   = leCtl<<10 | 0x001e // LE Transmitter Test
 	opLETestEnd                           = leCtl<<10 | 0x001f // LE Test End
 	opLERemoteConnectionParameterReply    = leCtl<<10 | 0x0020 // LE Remote Connection Parameter Request Reply
 	opLERemoteConnectionParameterNegReply = leCtl<<10 | 0x0021 // LE Remote Connection Parameter Request Negative Reply
 )
 
-var o = util.Order
+var o = util.BinaryOrder
 
 // Link Control Commands
 
@@ -426,13 +433,13 @@ func (c WritePageTimeout) Marshal(b []byte) { o.PutUint16(b, c.PageTimeout) }
 type WritePageTimeoutRP struct{}
 
 // Write Class of Device (0x0024)
-type WriteClassOfDevice struct{ ClassOfDevice [3]byte }
+type WriteDeviceClass struct{ DeviceClass [3]byte }
 
-func (c WriteClassOfDevice) Opcode() int      { return opWriteClassOfDevice }
-func (c WriteClassOfDevice) Len() int         { return 3 }
-func (c WriteClassOfDevice) Marshal(b []byte) { copy(b, c.ClassOfDevice[:]) }
+func (c WriteDeviceClass) Opcode() int      { return opWriteClassOfDevice }
+func (c WriteDeviceClass) Len() int         { return 3 }
+func (c WriteDeviceClass) Marshal(b []byte) { copy(b, c.DeviceClass[:]) }
 
-type WriteClassOfDevRP struct{ status uint8 }
+type WriteDeviceClassRP struct{ status uint8 }
 
 // Write Host Buffer Size (0x0033)
 type HostBufferSize struct {
@@ -712,56 +719,56 @@ func (c LECreateConnCancel) Marshal(b []byte) {}
 
 type LECreateConnCancelRP struct{ Status uint8 }
 
-// LE Read White List Size (0x000F)
-type LEReadWhiteListSize struct{}
+// LE Read Allow List Size (0x000F)
+type LEReadAllowListSize struct{}
 
-func (c LEReadWhiteListSize) Opcode() int      { return opLEReadWhiteListSize }
-func (c LEReadWhiteListSize) Len() int         { return 0 }
-func (c LEReadWhiteListSize) Marshal(b []byte) {}
+func (c LEReadAllowListSize) Opcode() int      { return opLEReadAllowListSize }
+func (c LEReadAllowListSize) Len() int         { return 0 }
+func (c LEReadAllowListSize) Marshal(b []byte) {}
 
-type LEReadWhiteListSizeRP struct {
+type LEReadAllowListSizeRP struct {
 	Status        uint8
-	WhiteListSize uint8
+	AllowListSize uint8
 }
 
-// LE Clear White List (0x0010)
-type LEClearWhiteList struct{}
+// LE Clear Allow List (0x0010)
+type LEClearAllowList struct{}
 
-func (c LEClearWhiteList) Opcode() int      { return opLEClearWhiteList }
-func (c LEClearWhiteList) Len() int         { return 0 }
-func (c LEClearWhiteList) Marshal(b []byte) {}
+func (c LEClearAllowList) Opcode() int      { return opLEClearAllowList }
+func (c LEClearAllowList) Len() int         { return 0 }
+func (c LEClearAllowList) Marshal(b []byte) {}
 
-type LEClearWhiteListRP struct{ Status uint8 }
+type LEClearAllowListRP struct{ Status uint8 }
 
-// LE Add Device To White List (0x0011)
-type LEAddDeviceToWhiteList struct {
+// LE Add Device To Allow List (0x0011)
+type LEAddDeviceToAllowList struct {
 	AddressType uint8
 	Address     [6]byte
 }
 
-func (c LEAddDeviceToWhiteList) Opcode() int { return opLEAddDeviceToWhiteList }
-func (c LEAddDeviceToWhiteList) Len() int    { return 7 }
-func (c LEAddDeviceToWhiteList) Marshal(b []byte) {
+func (c LEAddDeviceToAllowList) Opcode() int { return opLEAddDeviceToAllowList }
+func (c LEAddDeviceToAllowList) Len() int    { return 7 }
+func (c LEAddDeviceToAllowList) Marshal(b []byte) {
 	b[0] = c.AddressType
 	o.PutMAC(b[1:], c.Address)
 }
 
-type LEAddDeviceToWhiteListRP struct{ Status uint8 }
+type LEAddDeviceToAllowListRP struct{ Status uint8 }
 
-// LE Remove Device From White List (0x0012)
-type LERemoveDeviceFromWhiteList struct {
+// LE Remove Device From Allow List (0x0012)
+type LERemoveDeviceFromAllowList struct {
 	AddressType uint8
 	Address     [6]byte
 }
 
-func (c LERemoveDeviceFromWhiteList) Opcode() int { return opLERemoveDeviceFromWhiteList }
-func (c LERemoveDeviceFromWhiteList) Len() int    { return 7 }
-func (c LERemoveDeviceFromWhiteList) Marshal(b []byte) {
+func (c LERemoveDeviceFromAllowList) Opcode() int { return opLERemoveDeviceFromAllowList }
+func (c LERemoveDeviceFromAllowList) Len() int    { return 7 }
+func (c LERemoveDeviceFromAllowList) Marshal(b []byte) {
 	b[0] = c.AddressType
 	o.PutMAC(b[1:], c.Address)
 }
 
-type LERemoveDeviceFromWhiteListRP struct{ Status uint8 }
+type LERemoveDeviceFromAllowListRP struct{ Status uint8 }
 
 // LE Connection Update (0x0013)
 type LEConnUpdate struct {
@@ -833,7 +840,7 @@ func (c LEEncrypt) Marshal(b []byte) {
 }
 
 type LEEncryptRP struct {
-	Stauts        uint8
+	Status        uint8
 	EncryptedData [16]byte
 }
 
@@ -910,7 +917,7 @@ type LEReadSupportedStatesRP struct {
 	LEStates [8]byte
 }
 
-// LE Reciever Test (0x001D)
+// LE Receiver Test (0x001D)
 type LEReceiverTest struct{ RxChannel uint8 }
 
 func (c LEReceiverTest) Opcode() int      { return opLEReceiverTest }

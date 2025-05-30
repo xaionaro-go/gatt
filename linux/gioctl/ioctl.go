@@ -5,8 +5,8 @@ import (
 )
 
 const (
-	numberBits    = 8
-	typeBits      = 8
+	numberBits = 8
+	typeBits   = 8
 
 	numberShift    = 0
 	typeShift      = numberShift + numberBits
@@ -38,7 +38,7 @@ func IoRW(t, nr, size uintptr) uintptr {
 	return ioc(directionRead|directionWrite, t, nr, size)
 }
 
-// Ioctl simplified ioct call
+// Ioctl simplified ioctl call
 func Ioctl(fd, op, arg uintptr) error {
 	_, _, ep := syscall.Syscall(syscall.SYS_IOCTL, fd, op, arg)
 	if ep != 0 {

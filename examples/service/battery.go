@@ -1,14 +1,18 @@
 package service
 
-import "github.com/photostorm/gatt"
+import (
+	"context"
+
+	"github.com/xaionaro-go/gatt"
+)
 
 func NewBatteryService() *gatt.Service {
 	lv := byte(100)
 	s := gatt.NewService(gatt.UUID16(0x180F))
 	c := s.AddCharacteristic(gatt.UUID16(0x2A19))
 	c.HandleReadFunc(
-		func(rsp gatt.ResponseWriter, req *gatt.ReadRequest) {
-			rsp.Write([]byte{lv})
+		func(ctx context.Context, resp gatt.ResponseWriter, req *gatt.ReadRequest) {
+			resp.Write([]byte{lv})
 			lv--
 		})
 

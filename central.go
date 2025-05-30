@@ -2,6 +2,7 @@ package gatt
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"sync"
@@ -49,53 +50,53 @@ func (w *responseWriter) bytes() []byte         { return w.buf.Bytes() }
 
 // A ReadHandler handles GATT read requests.
 type ReadHandler interface {
-	ServeRead(resp ResponseWriter, req *ReadRequest)
+	ServeRead(ctx context.Context, resp ResponseWriter, req *ReadRequest)
 }
 
 // ReadHandlerFunc is an adapter to allow the use of
 // ordinary functions as ReadHandlers. If f is a function
 // with the appropriate signature, ReadHandlerFunc(f) is a
 // ReadHandler that calls f.
-type ReadHandlerFunc func(resp ResponseWriter, req *ReadRequest)
+type ReadHandlerFunc func(ctx context.Context, resp ResponseWriter, req *ReadRequest)
 
-// ServeRead returns f(r, maxlen, offset).
-func (f ReadHandlerFunc) ServeRead(resp ResponseWriter, req *ReadRequest) {
-	f(resp, req)
+// ServeRead returns f(r, maxLen, offset).
+func (f ReadHandlerFunc) ServeRead(ctx context.Context, resp ResponseWriter, req *ReadRequest) {
+	f(ctx, resp, req)
 }
 
 // A WriteHandler handles GATT write requests.
 // Write and WriteNR requests are presented identically;
 // the server will ensure that a response is sent if appropriate.
 type WriteHandler interface {
-	ServeWrite(r Request, data []byte) (status byte)
+	ServeWrite(ctx context.Context, r Request, data []byte) (status byte)
 }
 
 // WriteHandlerFunc is an adapter to allow the use of
 // ordinary functions as WriteHandlers. If f is a function
 // with the appropriate signature, WriteHandlerFunc(f) is a
 // WriteHandler that calls f.
-type WriteHandlerFunc func(r Request, data []byte) byte
+type WriteHandlerFunc func(ctx context.Context, r Request, data []byte) byte
 
 // ServeWrite returns f(r, data).
-func (f WriteHandlerFunc) ServeWrite(r Request, data []byte) byte {
-	return f(r, data)
+func (f WriteHandlerFunc) ServeWrite(ctx context.Context, r Request, data []byte) byte {
+	return f(ctx, r, data)
 }
 
 // A NotifyHandler handles GATT notification requests.
 // Notifications can be sent using the provided notifier.
 type NotifyHandler interface {
-	ServeNotify(r Request, n Notifier)
+	ServeNotify(ctx context.Context, r Request, n Notifier)
 }
 
 // NotifyHandlerFunc is an adapter to allow the use of
 // ordinary functions as NotifyHandlers. If f is a function
 // with the appropriate signature, NotifyHandlerFunc(f) is a
 // NotifyHandler that calls f.
-type NotifyHandlerFunc func(r Request, n Notifier)
+type NotifyHandlerFunc func(ctx context.Context, r Request, n Notifier)
 
 // ServeNotify calls f(r, n).
-func (f NotifyHandlerFunc) ServeNotify(r Request, n Notifier) {
-	f(r, n)
+func (f NotifyHandlerFunc) ServeNotify(ctx context.Context, r Request, n Notifier) {
+	f(ctx, r, n)
 }
 
 // A Notifier provides a means for a GATT server to send
@@ -115,38 +116,42 @@ type Notifier interface {
 }
 
 type notifier struct {
-	central *central
-	a       *attr
-	maxlen  int
-	donemu  sync.RWMutex
-	done    bool
+	central   *central
+	a         *attr
+	maxLen    int
+	doneMutex sync.RWMutex
+	done      bool
 }
 
-func newNotifier(c *central, a *attr, maxlen int) *notifier {
-	return &notifier{central: c, a: a, maxlen: maxlen}
+func newNotifier(c *central, a *attr, maxLen int) *notifier {
+	return &notifier{central: c, a: a, maxLen: maxLen}
 }
 
 func (n *notifier) Write(b []byte) (int, error) {
-	n.donemu.RLock()
-	defer n.donemu.RUnlock()
+	return n.WriteContext(context.Background(), b)
+}
+
+func (n *notifier) WriteContext(ctx context.Context, b []byte) (int, error) {
+	n.doneMutex.RLock()
+	defer n.doneMutex.RUnlock()
 	if n.done {
 		return 0, errors.New("central stopped notifications")
 	}
-	return n.central.sendNotification(n.a, b)
+	return n.central.sendNotification(ctx, n.a, b)
 }
 
 func (n *notifier) Cap() int {
-	return n.maxlen
+	return n.maxLen
 }
 
 func (n *notifier) Done() bool {
-	n.donemu.RLock()
-	defer n.donemu.RUnlock()
+	n.doneMutex.RLock()
+	defer n.doneMutex.RUnlock()
 	return n.done
 }
 
 func (n *notifier) stop() {
-	n.donemu.Lock()
+	n.doneMutex.Lock()
 	n.done = true
-	n.donemu.Unlock()
+	n.doneMutex.Unlock()
 }

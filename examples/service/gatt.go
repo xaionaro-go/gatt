@@ -1,9 +1,10 @@
 package service
 
 import (
-	"log"
+	"context"
+	"fmt"
 
-	"github.com/photostorm/gatt"
+	"github.com/xaionaro-go/gatt"
 )
 
 var (
@@ -16,9 +17,9 @@ var (
 func NewGattService() *gatt.Service {
 	s := gatt.NewService(attrGATTUUID)
 	s.AddCharacteristic(attrServiceChangedUUID).HandleNotifyFunc(
-		func(r gatt.Request, n gatt.Notifier) {
+		func(ctx context.Context, r gatt.Request, n gatt.Notifier) {
 			go func() {
-				log.Printf("TODO: indicate client when the services are changed")
+				fmt.Printf("TODO: indicate client when the services are changed")
 			}()
 		})
 	return s

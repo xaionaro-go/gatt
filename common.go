@@ -1,5 +1,7 @@
 package gatt
 
+import "context"
+
 // Supported statuses for GATT characteristic read/write operations.
 // These correspond to att constants in the BLE spec
 const (
@@ -26,7 +28,7 @@ type Property int
 
 // Characteristic property flags (spec 3.3.3.1)
 const (
-	CharBroadcast   Property = 0x01 // may be brocasted
+	CharBroadcast   Property = 0x01 // may be broadcasted
 	CharRead        Property = 0x02 // may be read
 	CharWriteNR     Property = 0x04 // may be written to, with no reply
 	CharWrite       Property = 0x08 // may be written to, with a reply
@@ -87,7 +89,7 @@ func (s *Service) AddCharacteristic(u UUID) *Characteristic {
 			panic("service already contains a characteristic with uuid " + u.String())
 		}
 	}
-	c := &Characteristic{uuid: u, svc: s}
+	c := &Characteristic{uuid: u, service: s}
 	s.chars = append(s.chars, c)
 	return c
 }
@@ -95,8 +97,8 @@ func (s *Service) AddCharacteristic(u UUID) *Characteristic {
 // UUID returns the UUID of the service.
 func (s *Service) UUID() UUID { return s.uuid }
 
-// Name returns the specificatin name of the service according to its UUID.
-// If the UUID is not assigne, Name returns an empty string.
+// Name returns the specified name of the service according to its UUID.
+// If the UUID is not assigned, Name returns an empty string.
 func (s *Service) Name() string {
 	return knownServices[s.uuid.String()].Name
 }
@@ -121,33 +123,33 @@ func (s *Service) Characteristics() []*Characteristic { return s.chars }
 
 // A Characteristic is a BLE characteristic.
 type Characteristic struct {
-	uuid   UUID
-	props  Property // enabled properties
-	secure Property // security enabled properties
-	svc    *Service
-	cccd   *Descriptor
-	descs  []*Descriptor
+	uuid    UUID
+	props   Property // enabled properties
+	secure  Property // security enabled properties
+	service *Service
+	cccd    *Descriptor
+	descs   []*Descriptor
 
 	value []byte
 
 	// All the following fields are only used in peripheral/server implementation.
-	rhandler ReadHandler
-	whandler WriteHandler
-	nhandler NotifyHandler
+	readHandler   ReadHandler
+	writeHandler  WriteHandler
+	notifyHandler NotifyHandler
 
-	h    uint16
-	vh   uint16
-	endh uint16
+	h    uint16 // TODO: what is 'h'?
+	vh   uint16 // TODO: what is 'vh'?
+	endh uint16 // TODO: what is 'h' in the 'endh'?
 }
 
 // NewCharacteristic creates and returns a Characteristic.
 func NewCharacteristic(u UUID, s *Service, props Property, h uint16, vh uint16) *Characteristic {
 	c := &Characteristic{
-		uuid:  u,
-		svc:   s,
-		props: props,
-		h:     h,
-		vh:    vh,
+		uuid:    u,
+		service: s,
+		props:   props,
+		h:       h,
+		vh:      vh,
 	}
 
 	return c
@@ -185,7 +187,7 @@ func (c *Characteristic) UUID() UUID {
 	return c.uuid
 }
 
-// Name returns the specificatin name of the characteristic.
+// Name returns the specified name of the characteristic.
 // If the UUID is not assigned, Name returns empty string.
 func (c *Characteristic) Name() string {
 	return knownCharacteristics[c.uuid.String()].Name
@@ -193,7 +195,7 @@ func (c *Characteristic) Name() string {
 
 // Service returns the containing service of this characteristic.
 func (c *Characteristic) Service() *Service {
-	return c.svc
+	return c.service
 }
 
 // Properties returns the properties of this characteristic.
@@ -225,8 +227,8 @@ func (c *Characteristic) AddDescriptor(u UUID) *Descriptor {
 // added to a server.
 // SetValue panics if the characteristic has been configured with a ReadHandler.
 func (c *Characteristic) SetValue(b []byte) {
-	if c.rhandler != nil {
-		panic("charactristic has been configured with a read handler")
+	if c.readHandler != nil {
+		panic("characteristic has been configured with a read handler")
 	}
 	c.props |= CharRead
 	// c.secure |= CharRead
@@ -240,20 +242,20 @@ func (c *Characteristic) SetValue(b []byte) {
 // HandleRead panics if the characteristic has been configured with a static value.
 func (c *Characteristic) HandleRead(h ReadHandler) {
 	if c.value != nil {
-		panic("charactristic has been configured with a static value")
+		panic("characteristic has been configured with a static value")
 	}
 	c.props |= CharRead
 	// c.secure |= CharRead
-	c.rhandler = h
+	c.readHandler = h
 }
 
 // HandleReadFunc calls HandleRead(ReadHandlerFunc(f)).
-func (c *Characteristic) HandleReadFunc(f func(rsp ResponseWriter, req *ReadRequest)) {
+func (c *Characteristic) HandleReadFunc(f func(ctx context.Context, resp ResponseWriter, req *ReadRequest)) {
 	c.HandleRead(ReadHandlerFunc(f))
 }
 
 func (c *Characteristic) GetReadHandler() ReadHandler {
-	return c.rhandler
+	return c.readHandler
 }
 
 // HandleWrite makes the characteristic support write and write-no-response
@@ -264,16 +266,16 @@ func (c *Characteristic) GetReadHandler() ReadHandler {
 func (c *Characteristic) HandleWrite(h WriteHandler) {
 	c.props |= CharWrite | CharWriteNR
 	// c.secure |= CharWrite | CharWriteNR
-	c.whandler = h
+	c.writeHandler = h
 }
 
 // HandleWriteFunc calls HandleWrite(WriteHandlerFunc(f)).
-func (c *Characteristic) HandleWriteFunc(f func(r Request, data []byte) (status byte)) {
+func (c *Characteristic) HandleWriteFunc(f func(ctx context.Context, r Request, data []byte) (status byte)) {
 	c.HandleWrite(WriteHandlerFunc(f))
 }
 
 func (c *Characteristic) GetWriteHandler() WriteHandler {
-	return c.whandler
+	return c.writeHandler
 }
 
 // HandleNotify makes the characteristic support notify requests, and routes
@@ -285,7 +287,7 @@ func (c *Characteristic) HandleNotify(h NotifyHandler) {
 	}
 	p := CharNotify | CharIndicate
 	c.props |= p
-	c.nhandler = h
+	c.notifyHandler = h
 
 	// add ccc (client characteristic configuration) descriptor
 	secure := Property(0)
@@ -308,12 +310,12 @@ func (c *Characteristic) HandleNotify(h NotifyHandler) {
 }
 
 // HandleNotifyFunc calls HandleNotify(NotifyHandlerFunc(f)).
-func (c *Characteristic) HandleNotifyFunc(f func(r Request, n Notifier)) {
+func (c *Characteristic) HandleNotifyFunc(f func(ctx context.Context, r Request, n Notifier)) {
 	c.HandleNotify(NotifyHandlerFunc(f))
 }
 
 func (c *Characteristic) GetNotifyHandler() NotifyHandler {
-	return c.nhandler
+	return c.notifyHandler
 }
 
 // TODO
@@ -329,10 +331,10 @@ type Descriptor struct {
 
 	h        uint16
 	value    []byte
-	valuestr string
+	valueStr string
 
-	rhandler ReadHandler
-	whandler WriteHandler
+	readHandler  ReadHandler
+	writeHandler WriteHandler
 }
 
 // Handle returns the Handle of the descriptor.
@@ -356,7 +358,7 @@ func (d *Descriptor) UUID() UUID {
 	return d.uuid
 }
 
-// Name returns the specificatin name of the descriptor.
+// Name returns the specified name of the descriptor.
 // If the UUID is not assigned, returns an empty string.
 func (d *Descriptor) Name() string {
 	return knownDescriptors[d.uuid.String()].Name
@@ -371,7 +373,7 @@ func (d *Descriptor) Characteristic() *Characteristic {
 // SetValue must be called before the containing service is added to a server.
 // SetValue panics if the descriptor has already configured with a ReadHandler.
 func (d *Descriptor) SetValue(b []byte) {
-	if d.rhandler != nil {
+	if d.readHandler != nil {
 		panic("descriptor has been configured with a read handler")
 	}
 	d.props |= CharRead
@@ -384,12 +386,12 @@ func (d *Descriptor) SetValue(b []byte) {
 // SetStringValue must be called before the containing service is added to a server.
 // SetStringValue panics if the descriptor has already configured with a ReadHandler.
 func (d *Descriptor) SetStringValue(s string) {
-	if d.rhandler != nil {
+	if d.readHandler != nil {
 		panic("descriptor has been configured with a read handler")
 	}
 	d.props |= CharRead
 	// d.secure |= CharRead
-	d.valuestr = s
+	d.valueStr = s
 }
 
 // HandleRead makes the descriptor support read requests, and routes read requests to h.
@@ -401,11 +403,11 @@ func (d *Descriptor) HandleRead(h ReadHandler) {
 	}
 	d.props |= CharRead
 	// d.secure |= CharRead
-	d.rhandler = h
+	d.readHandler = h
 }
 
 // HandleReadFunc calls HandleRead(ReadHandlerFunc(f)).
-func (d *Descriptor) HandleReadFunc(f func(rsp ResponseWriter, req *ReadRequest)) {
+func (d *Descriptor) HandleReadFunc(f func(ctx context.Context, resp ResponseWriter, req *ReadRequest)) {
 	d.HandleRead(ReadHandlerFunc(f))
 }
 
@@ -415,10 +417,10 @@ func (d *Descriptor) HandleReadFunc(f func(rsp ResponseWriter, req *ReadRequest)
 func (d *Descriptor) HandleWrite(h WriteHandler) {
 	d.props |= CharWrite | CharWriteNR
 	// d.secure |= CharWrite | CharWriteNR
-	d.whandler = h
+	d.writeHandler = h
 }
 
 // HandleWriteFunc calls HandleWrite(WriteHandlerFunc(f)).
-func (d *Descriptor) HandleWriteFunc(f func(r Request, data []byte) (status byte)) {
+func (d *Descriptor) HandleWriteFunc(f func(ctx context.Context, r Request, data []byte) (status byte)) {
 	d.HandleWrite(WriteHandlerFunc(f))
 }

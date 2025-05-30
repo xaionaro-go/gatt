@@ -1,28 +1,30 @@
-// +build
+//go:build ignore
+// +build ignore
 
 package main
 
 import (
+	"context"
 	"fmt"
-	"log"
 
-	"github.com/photostorm/gatt"
-	"github.com/photostorm/gatt/examples/option"
+	"github.com/facebookincubator/go-belt/tool/logger"
+	"github.com/xaionaro-go/gatt"
+	"github.com/xaionaro-go/gatt/examples/option"
 )
 
-func onStateChanged(d gatt.Device, s gatt.State) {
+func onStateChanged(ctx context.Context, d gatt.Device, s gatt.State) {
 	fmt.Println("State:", s)
 	switch s {
 	case gatt.StatePoweredOn:
 		fmt.Println("scanning...")
-		d.Scan([]gatt.UUID{}, false)
+		d.Scan(ctx, []gatt.UUID{}, false)
 		return
 	default:
 		d.StopScanning()
 	}
 }
 
-func onPeriphDiscovered(p gatt.Peripheral, a *gatt.Advertisement, rssi int) {
+func onPeriphDiscovered(ctx context.Context, p gatt.Peripheral, a *gatt.Advertisement, rssi int) {
 	fmt.Printf("\nPeripheral ID:%s, NAME:(%s)\n", p.ID(), p.Name())
 	fmt.Println("  Local Name        =", a.LocalName)
 	fmt.Println("  TX Power Level    =", a.TxPowerLevel)
@@ -31,14 +33,15 @@ func onPeriphDiscovered(p gatt.Peripheral, a *gatt.Advertisement, rssi int) {
 }
 
 func main() {
-	d, err := gatt.NewDevice(option.DefaultClientOptions...)
+	ctx := context.Background()
+	d, err := gatt.NewDevice(ctx, option.DefaultClientOptions...)
 	if err != nil {
-		log.Fatalf("Failed to open device, err: %s\n", err)
+		logger.Fatalf(ctx, "failed to open device, err: %s\n", err)
 		return
 	}
 
 	// Register handlers.
-	d.Handle(gatt.PeripheralDiscovered(onPeriphDiscovered))
-	d.Init(onStateChanged)
-	select {}
+	d.Handle(ctx, gatt.PeripheralDiscovered(onPeriphDiscovered))
+	d.Start(ctx, onStateChanged)
+	<-ctx.Done()
 }

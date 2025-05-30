@@ -9,9 +9,11 @@ import "C"
 import (
 	"errors"
 	"fmt"
-	"log"
+
 	r "reflect"
 	"unsafe"
+
+	"github.com/facebookincubator/go-belt/tool/logger"
 )
 
 type XPC struct {
@@ -69,30 +71,30 @@ func (d Dict) MustGetUUID(k string) []byte {
 
 func (d Dict) GetString(k, defv string) string {
 	if v := d[k]; v != nil {
-		//log.Printf("GetString %s %#v\n", k, v)
+		//logger.Debugf(ctx, "GetString %s %#v\n", k, v)
 		return v.(string)
 	} else {
-		//log.Printf("GetString %s default %#v\n", k, defv)
+		//logger.Debugf(ctx, "GetString %s default %#v\n", k, defv)
 		return defv
 	}
 }
 
 func (d Dict) GetBytes(k string, defv []byte) []byte {
 	if v := d[k]; v != nil {
-		//log.Printf("GetBytes %s %#v\n", k, v)
+		//logger.Debugf(ctx, "GetBytes %s %#v\n", k, v)
 		return v.([]byte)
 	} else {
-		//log.Printf("GetBytes %s default %#v\n", k, defv)
+		//logger.Debugf(ctx, "GetBytes %s default %#v\n", k, defv)
 		return defv
 	}
 }
 
 func (d Dict) GetInt(k string, defv int) int {
 	if v := d[k]; v != nil {
-		//log.Printf("GetString %s %#v\n", k, v)
+		//logger.Debugf(ctx, "GetString %s %#v\n", k, v)
 		return int(v.(int64))
 	} else {
-		//log.Printf("GetString %s default %#v\n", k, defv)
+		//logger.Debugf(ctx, "GetString %s default %#v\n", k, defv)
 		return defv
 	}
 }
@@ -153,7 +155,7 @@ func GetUUID(v interface{}) UUID {
 		return uuid
 	}
 
-	log.Fatalf("invalid type for UUID: %#v", v)
+	logger.Fatalf(ctx, "invalid type for UUID: %#v", v)
 	return UUID{}
 }
 
@@ -181,7 +183,7 @@ func XpcConnect(service string, eh XpcEventHandler) XPC {
 
 //export handleXpcEvent
 func handleXpcEvent(event C.xpc_object_t, p C.ulong) {
-	//log.Printf("handleXpcEvent %#v %#v\n", event, p)
+	//logger.Debugf(ctx, "handleXpcEvent %#v %#v\n", event, p)
 
 	t := C.xpc_get_type(event)
 	eh := handlers[uintptr(p)]
@@ -281,7 +283,7 @@ func valueToXpc(val r.Value) C.xpc_object_t {
 		xv = valueToXpc(val.Elem())
 
 	default:
-		log.Fatalf("unsupported %#v", val.String())
+		logger.Fatalf(ctx, "unsupported %#v", val.String())
 	}
 
 	return xv
@@ -331,7 +333,7 @@ func xpcToGo(v C.xpc_object_t) interface{} {
 		return UUID(a[:])
 
 	default:
-		log.Fatalf("unexpected type %#v, value %#v", t, v)
+		logger.Fatalf(ctx, "unexpected type %#v, value %#v", t, v)
 	}
 
 	return nil

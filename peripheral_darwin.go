@@ -1,10 +1,11 @@
 package gatt
 
 import (
+	"context"
 	"errors"
-	"log"
 
-	"github.com/photostorm/gatt/xpc"
+	"github.com/facebookincubator/go-belt/tool/logger"
+	"github.com/xaionaro-go/gatt/xpc"
 )
 
 type peripheral struct {
@@ -15,36 +16,36 @@ type peripheral struct {
 	// A list of invalid service is provided in the parameter.
 	ServicesModified func(Peripheral, []*Service)
 
-	d    *device
-	svcs []*Service
+	device *device
+	svcs   []*Service
 
 	sub *subscriber
 
 	id   xpc.UUID
 	name string
 
-	reqc  chan message
-	rspc  chan message
-	quitc chan struct{}
+	reqc   chan message
+	respCh chan message
+	quitc  chan struct{}
 }
 
 func NewPeripheral(u UUID) Peripheral { return &peripheral{id: xpc.UUID(u.b)} }
 
-func (p *peripheral) Device() Device       { return p.d }
-func (p *peripheral) ID() string           { return p.id.String() }
-func (p *peripheral) Name() string         { return p.name }
-func (p *peripheral) Services() []*Service { return p.svcs }
+func (p *peripheral) Device() Device                          { return p.device }
+func (p *peripheral) ID() string                              { return p.id.String() }
+func (p *peripheral) Name() string                            { return p.name }
+func (p *peripheral) Services(ctx context.Context) []*Service { return p.svcs }
 
-func (p *peripheral) DiscoverServices(ss []UUID) ([]*Service, error) {
-	rsp := p.sendReq(45, xpc.Dict{
+func (p *peripheral) DiscoverServices(ctx context.Context, ss []UUID) ([]*Service, error) {
+	resp := p.sendReq(ctx, 45, xpc.Dict{
 		"kCBMsgArgDeviceUUID": p.id,
 		"kCBMsgArgUUIDs":      uuidSlice(ss),
 	})
-	if res := rsp.MustGetInt("kCBMsgArgResult"); res != 0 {
-		return nil, AttEcode(res)
+	if res := resp.MustGetInt("kCBMsgArgResult"); res != 0 {
+		return nil, AttrECode(res)
 	}
 	svcs := []*Service{}
-	for _, xss := range rsp["kCBMsgArgServices"].(xpc.Array) {
+	for _, xss := range resp["kCBMsgArgServices"].(xpc.Array) {
 		xs := xss.(xpc.Dict)
 		u := MustParseUUID(xs.MustGetHexBytes("kCBMsgArgUUID"))
 		h := uint16(xs.MustGetInt("kCBMsgArgServiceStartHandle"))
@@ -55,31 +56,31 @@ func (p *peripheral) DiscoverServices(ss []UUID) ([]*Service, error) {
 	return svcs, nil
 }
 
-func (p *peripheral) DiscoverIncludedServices(ss []UUID, s *Service) ([]*Service, error) {
-	rsp := p.sendReq(60, xpc.Dict{
+func (p *peripheral) DiscoverIncludedServices(ctx context.Context, ss []UUID, s *Service) ([]*Service, error) {
+	resp := p.sendReq(ctx, 60, xpc.Dict{
 		"kCBMsgArgDeviceUUID":         p.id,
 		"kCBMsgArgServiceStartHandle": s.h,
 		"kCBMsgArgServiceEndHandle":   s.endh,
 		"kCBMsgArgUUIDs":              uuidSlice(ss),
 	})
-	if res := rsp.MustGetInt("kCBMsgArgResult"); res != 0 {
-		return nil, AttEcode(res)
+	if res := resp.MustGetInt("kCBMsgArgResult"); res != 0 {
+		return nil, AttrECode(res)
 	}
 	// TODO
-	return nil, notImplemented
+	return nil, errNotImplemented
 }
 
-func (p *peripheral) DiscoverCharacteristics(cs []UUID, s *Service) ([]*Characteristic, error) {
-	rsp := p.sendReq(62, xpc.Dict{
+func (p *peripheral) DiscoverCharacteristics(ctx context.Context, cs []UUID, s *Service) ([]*Characteristic, error) {
+	resp := p.sendReq(ctx, 62, xpc.Dict{
 		"kCBMsgArgDeviceUUID":         p.id,
 		"kCBMsgArgServiceStartHandle": s.h,
 		"kCBMsgArgServiceEndHandle":   s.endh,
 		"kCBMsgArgUUIDs":              uuidSlice(cs),
 	})
-	if res := rsp.MustGetInt("kCBMsgArgResult"); res != 0 {
-		return nil, AttEcode(res)
+	if res := resp.MustGetInt("kCBMsgArgResult"); res != 0 {
+		return nil, AttrECode(res)
 	}
-	for _, xcs := range rsp.MustGetArray("kCBMsgArgCharacteristics") {
+	for _, xcs := range resp.MustGetArray("kCBMsgArgCharacteristics") {
 		xc := xcs.(xpc.Dict)
 		u := MustParseUUID(xc.MustGetHexBytes("kCBMsgArgUUID"))
 		ch := uint16(xc.MustGetInt("kCBMsgArgCharacteristicHandle"))
@@ -91,14 +92,14 @@ func (p *peripheral) DiscoverCharacteristics(cs []UUID, s *Service) ([]*Characte
 	return s.chars, nil
 }
 
-func (p *peripheral) DiscoverDescriptors(ds []UUID, c *Characteristic) ([]*Descriptor, error) {
-	rsp := p.sendReq(70, xpc.Dict{
+func (p *peripheral) DiscoverDescriptors(ctx context.Context, ds []UUID, c *Characteristic) ([]*Descriptor, error) {
+	resp := p.sendReq(ctx, 70, xpc.Dict{
 		"kCBMsgArgDeviceUUID":                p.id,
 		"kCBMsgArgCharacteristicHandle":      c.h,
 		"kCBMsgArgCharacteristicValueHandle": c.vh,
 		"kCBMsgArgUUIDs":                     uuidSlice(ds),
 	})
-	for _, xds := range rsp.MustGetArray("kCBMsgArgDescriptors") {
+	for _, xds := range resp.MustGetArray("kCBMsgArgDescriptors") {
 		xd := xds.(xpc.Dict)
 		u := MustParseUUID(xd.MustGetHexBytes("kCBMsgArgUUID"))
 		h := uint16(xd.MustGetInt("kCBMsgArgDescriptorHandle"))
@@ -108,104 +109,104 @@ func (p *peripheral) DiscoverDescriptors(ds []UUID, c *Characteristic) ([]*Descr
 	return c.descs, nil
 }
 
-func (p *peripheral) ReadCharacteristic(c *Characteristic) ([]byte, error) {
-	rsp := p.sendReq(65, xpc.Dict{
+func (p *peripheral) ReadCharacteristic(ctx context.Context, c *Characteristic) ([]byte, error) {
+	resp := p.sendReq(ctx, 65, xpc.Dict{
 		"kCBMsgArgDeviceUUID":                p.id,
 		"kCBMsgArgCharacteristicHandle":      c.h,
 		"kCBMsgArgCharacteristicValueHandle": c.vh,
 	})
-	if res := rsp.MustGetInt("kCBMsgArgResult"); res != 0 {
-		return nil, AttEcode(res)
+	if res := resp.MustGetInt("kCBMsgArgResult"); res != 0 {
+		return nil, AttrECode(res)
 	}
-	b := rsp.MustGetBytes("kCBMsgArgData")
+	b := resp.MustGetBytes("kCBMsgArgData")
 	return b, nil
 }
 
-func (p *peripheral) ReadLongCharacteristic(c *Characteristic) ([]byte, error) {
+func (p *peripheral) ReadLongCharacteristic(ctx context.Context, c *Characteristic) ([]byte, error) {
 	return nil, errors.New("Not implemented")
 }
 
-func (p *peripheral) WriteCharacteristic(c *Characteristic, b []byte, noRsp bool) error {
+func (p *peripheral) WriteCharacteristic(ctx context.Context, c *Characteristic, b []byte, noResp bool) error {
 	args := xpc.Dict{
 		"kCBMsgArgDeviceUUID":                p.id,
 		"kCBMsgArgCharacteristicHandle":      c.h,
 		"kCBMsgArgCharacteristicValueHandle": c.vh,
 		"kCBMsgArgData":                      b,
-		"kCBMsgArgType":                      map[bool]int{false: 0, true: 1}[noRsp],
+		"kCBMsgArgType":                      map[bool]int{false: 0, true: 1}[noResp],
 	}
-	if noRsp {
-		p.sendCmd(66, args)
+	if noResp {
+		p.sendCmd(ctx, 66, args)
 		return nil
 	}
-	rsp := p.sendReq(66, args)
-	if res := rsp.MustGetInt("kCBMsgArgResult"); res != 0 {
-		return AttEcode(res)
+	resp := p.sendReq(ctx, 66, args)
+	if res := resp.MustGetInt("kCBMsgArgResult"); res != 0 {
+		return AttrECode(res)
 	}
 	return nil
 }
 
-func (p *peripheral) ReadDescriptor(d *Descriptor) ([]byte, error) {
-	rsp := p.sendReq(77, xpc.Dict{
+func (p *peripheral) ReadDescriptor(ctx context.Context, d *Descriptor) ([]byte, error) {
+	resp := p.sendReq(ctx, 77, xpc.Dict{
 		"kCBMsgArgDeviceUUID":       p.id,
 		"kCBMsgArgDescriptorHandle": d.h,
 	})
-	if res := rsp.MustGetInt("kCBMsgArgResult"); res != 0 {
-		return nil, AttEcode(res)
+	if res := resp.MustGetInt("kCBMsgArgResult"); res != 0 {
+		return nil, AttrECode(res)
 	}
-	b := rsp.MustGetBytes("kCBMsgArgData")
+	b := resp.MustGetBytes("kCBMsgArgData")
 	return b, nil
 }
 
-func (p *peripheral) WriteDescriptor(d *Descriptor, b []byte) error {
-	rsp := p.sendReq(78, xpc.Dict{
+func (p *peripheral) WriteDescriptor(ctx context.Context, d *Descriptor, b []byte) error {
+	resp := p.sendReq(ctx, 78, xpc.Dict{
 		"kCBMsgArgDeviceUUID":       p.id,
 		"kCBMsgArgDescriptorHandle": d.h,
 		"kCBMsgArgData":             b,
 	})
-	if res := rsp.MustGetInt("kCBMsgArgResult"); res != 0 {
-		return AttEcode(res)
+	if res := resp.MustGetInt("kCBMsgArgResult"); res != 0 {
+		return AttrECode(res)
 	}
 	return nil
 }
 
-func (p *peripheral) SetNotifyValue(c *Characteristic, f func(*Characteristic, []byte, error)) error {
+func (p *peripheral) SetNotifyValue(ctx context.Context, c *Characteristic, f func(*Characteristic, []byte, error)) error {
 	set := 1
 	if f == nil {
 		set = 0
 	}
-	// To avoid race condition, registeration is handled before requesting the server.
+	// To avoid race condition, registration is handled before requesting the server.
 	if f != nil {
 		// Note: when notified, core bluetooth reports characteristic handle, not value's handle.
 		p.sub.subscribe(c.h, func(b []byte, err error) { f(c, b, err) })
 	}
-	rsp := p.sendReq(68, xpc.Dict{
+	resp := p.sendReq(ctx, 68, xpc.Dict{
 		"kCBMsgArgDeviceUUID":                p.id,
 		"kCBMsgArgCharacteristicHandle":      c.h,
 		"kCBMsgArgCharacteristicValueHandle": c.vh,
 		"kCBMsgArgState":                     set,
 	})
-	if res := rsp.MustGetInt("kCBMsgArgResult"); res != 0 {
-		return AttEcode(res)
+	if res := resp.MustGetInt("kCBMsgArgResult"); res != 0 {
+		return AttrECode(res)
 	}
-	// To avoid race condition, unregisteration is handled after server responses.
+	// To avoid race condition, unregistration is handled after server responses.
 	if f == nil {
 		p.sub.unsubscribe(c.h)
 	}
 	return nil
 }
 
-func (p *peripheral) SetIndicateValue(c *Characteristic,
+func (p *peripheral) SetIndicateValue(ctx context.Context, c *Characteristic,
 	f func(*Characteristic, []byte, error)) error {
 	// TODO: Implement set indications logic for darwin (https://github.com/paypal/gatt/issues/32)
 	return nil
 }
 
-func (p *peripheral) ReadRSSI() int {
-	rsp := p.sendReq(43, xpc.Dict{"kCBMsgArgDeviceUUID": p.id})
-	return rsp.MustGetInt("kCBMsgArgData")
+func (p *peripheral) ReadRSSI(ctx context.Context) int {
+	resp := p.sendReq(ctx, 43, xpc.Dict{"kCBMsgArgDeviceUUID": p.id})
+	return resp.MustGetInt("kCBMsgArgData")
 }
 
-func (p *peripheral) SetMTU(mtu uint16) error {
+func (p *peripheral) SetMTU(ctx context.Context, mtu uint16) error {
 	return errors.New("Not implemented")
 }
 
@@ -218,34 +219,34 @@ func uuidSlice(uu []UUID) [][]byte {
 }
 
 type message struct {
-	id   int
-	args xpc.Dict
-	rspc chan xpc.Dict
+	id     int
+	args   xpc.Dict
+	respCh chan xpc.Dict
 }
 
-func (p *peripheral) sendCmd(id int, args xpc.Dict) {
+func (p *peripheral) sendCmd(ctx context.Context, id int, args xpc.Dict) {
 	p.reqc <- message{id: id, args: args}
 }
 
-func (p *peripheral) sendReq(id int, args xpc.Dict) xpc.Dict {
-	m := message{id: id, args: args, rspc: make(chan xpc.Dict)}
+func (p *peripheral) sendReq(ctx context.Context, id int, args xpc.Dict) xpc.Dict {
+	m := message{id: id, args: args, respCh: make(chan xpc.Dict)}
 	p.reqc <- m
-	return <-m.rspc
+	return <-m.respCh
 }
 
-func (p *peripheral) loop() {
-	rspc := make(chan message)
+func (p *peripheral) loop(ctx context.Context) {
+	respCh := make(chan message)
 
 	go func() {
 		for {
 			select {
 			case req := <-p.reqc:
-				p.d.sendCBMsg(req.id, req.args)
-				if req.rspc == nil {
+				p.device.sendCBMsg(ctx, req.id, req.args)
+				if req.respCh == nil {
 					break
 				}
-				m := <-rspc
-				req.rspc <- m.args
+				m := <-respCh
+				req.respCh <- m.args
 			case <-p.quitc:
 				return
 			}
@@ -254,22 +255,22 @@ func (p *peripheral) loop() {
 
 	for {
 		select {
-		case rsp := <-p.rspc:
+		case resp := <-p.respCh:
 			// Notification
-			if rsp.id == 71 && rsp.args.GetInt("kCBMsgArgIsNotification", 0) != 0 {
+			if resp.id == 71 && resp.args.GetInt("kCBMsgArgIsNotification", 0) != 0 {
 				// While we're notified with the value's handle, blued reports the characteristic handle.
-				ch := uint16(rsp.args.MustGetInt("kCBMsgArgCharacteristicHandle"))
-				b := rsp.args.MustGetBytes("kCBMsgArgData")
+				ch := uint16(resp.args.MustGetInt("kCBMsgArgCharacteristicHandle"))
+				b := resp.args.MustGetBytes("kCBMsgArgData")
 				f := p.sub.fn(ch)
 				if f == nil {
-					log.Printf("notified by unsubscribed handle")
+					logger.Debugf(ctx, "notified by unsubscribed handle")
 					// FIXME: should terminate the connection?
 				} else {
 					go f(b, nil)
 				}
 				break
 			}
-			rspc <- rsp
+			respCh <- resp
 		case <-p.quitc:
 			return
 		}
