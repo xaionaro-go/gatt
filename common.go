@@ -190,6 +190,9 @@ func (c *Characteristic) UUID() UUID {
 // Name returns the specified name of the characteristic.
 // If the UUID is not assigned, Name returns empty string.
 func (c *Characteristic) Name() string {
+	if c == nil {
+		return "<nil>"
+	}
 	return knownCharacteristics[c.uuid.String()].Name
 }
 
@@ -329,7 +332,7 @@ type Descriptor struct {
 	props  Property // enabled properties
 	secure Property // security enabled properties
 
-	h        uint16
+	h        uint16 // what is `h` here?
 	value    []byte
 	valueStr string
 

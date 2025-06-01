@@ -38,17 +38,3 @@ func TestReverse(t *testing.T) {
 		}
 	}
 }
-
-func BenchmarkReverseBytes16(b *testing.B) {
-	u := UUID{make([]byte, 2)}
-	for i := 0; i < b.N; i++ {
-		reverse(u.b)
-	}
-}
-
-func BenchmarkReverseBytes128(b *testing.B) {
-	u := UUID{make([]byte, 16)}
-	for i := 0; i < b.N; i++ {
-		reverse(u.b)
-	}
-}

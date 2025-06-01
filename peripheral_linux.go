@@ -352,6 +352,17 @@ func (p *peripheral) WriteDescriptor(ctx context.Context, d *Descriptor, value [
 	return err
 }
 
+func (p *peripheral) Subscribe(
+	vh uint16,
+	f func(*Characteristic, []byte, error),
+) {
+	p.sub.subscribe(vh, func(b []byte, err error) {
+		f(&Characteristic{
+			vh: vh,
+		}, b, err)
+	})
+}
+
 func (p *peripheral) setNotifyValue(ctx context.Context, c *Characteristic, flag uint16,
 	f func(*Characteristic, []byte, error)) error {
 	if c.cccd == nil {
@@ -421,7 +432,13 @@ func (p *peripheral) sendCmd(ctx context.Context, op byte, b []byte) error {
 	}
 }
 
-func (p *peripheral) sendReq(ctx context.Context, op byte, b []byte) ([]byte, error) {
+func (p *peripheral) sendReq(
+	ctx context.Context,
+	op byte,
+	b []byte,
+) (_ret []byte, _err error) {
+	logger.Tracef(ctx, "sendReq(ctx, %02X, %X)", op, b)
+	defer func() { logger.Tracef(ctx, "/sendReq(ctx, %02X, %X): %X %v", op, b, _ret, _err) }()
 	m := message{op: op, b: b, respCh: make(chan []byte)}
 
 	// send
@@ -430,6 +447,8 @@ func (p *peripheral) sendReq(ctx context.Context, op byte, b []byte) ([]byte, er
 		return nil, ctx.Err()
 	case p.reqCh <- m:
 	}
+
+	logger.Debugf(ctx, "sendReq: sent the request to send")
 
 	// receive
 	select {
@@ -449,12 +468,17 @@ func (p *peripheral) loop(ctx context.Context) {
 
 	// Dequeue request loop
 	go func() {
+		logger.Tracef(ctx, "loop: listener")
+		defer logger.Tracef(ctx, "loop: /listener")
 		for {
 			select {
 			case <-ctx.Done():
+				logger.Tracef(ctx, "<-ctx.Done(): %v", ctx.Err())
 				return
 			case req := <-p.reqCh:
-				p.l2c.Write(req.b)
+				logger.Tracef(ctx, "p.l2c.Write(%X)", req.b)
+				n, err := p.l2c.Write(req.b)
+				logger.Tracef(ctx, "/p.l2c.Write: %v %v", n, err)
 				if req.respCh == nil {
 					break
 				}
@@ -470,6 +494,7 @@ func (p *peripheral) loop(ctx context.Context) {
 					p.l2c.Write(attErrorResp(respOp, 0x0000, AttrECodeReqNotSupp))
 				}
 			case <-p.quitCh:
+				logger.Tracef(ctx, "<-p.quitCh")
 				return
 			}
 		}
@@ -481,7 +506,9 @@ func (p *peripheral) loop(ctx context.Context) {
 
 	// Handling response or notification/indication
 	for {
+		logger.Tracef(ctx, "p.l2c.Read...")
 		n, err := p.l2c.Read(buf)
+		logger.Tracef(ctx, "/p.l2c.Read: %v %v", n, err)
 		if n == 0 || err != nil {
 			close(p.quitCh)
 			return
@@ -499,7 +526,7 @@ func (p *peripheral) loop(ctx context.Context) {
 		h := binary.LittleEndian.Uint16(b[1:3])
 		f := p.sub.fn(h)
 		if f == nil {
-			logger.Debugf(ctx, "notified by unsubscribed handle")
+			logger.Debugf(ctx, "notified by unsubscribed handle (%04X)", h)
 			// FIXME: terminate the connection?
 		} else {
 			go f(b[3:], nil)

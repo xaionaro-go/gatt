@@ -53,6 +53,8 @@ type Peripheral interface {
 	// WriteDescriptor writes the value of a characteristic descriptor.
 	WriteDescriptor(ctx context.Context, d *Descriptor, b []byte) error
 
+	Subscribe(vh uint16, f func(*Characteristic, []byte, error))
+
 	// SetNotifyValue sets notifications for the value of a specified characteristic.
 	SetNotifyValue(ctx context.Context, c *Characteristic, f func(*Characteristic, []byte, error)) error
 

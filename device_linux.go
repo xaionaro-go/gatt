@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"net"
 
+	"github.com/facebookincubator/go-belt/tool/logger"
 	"github.com/xaionaro-go/ctxflow"
 	"github.com/xaionaro-go/gatt/linux"
 	"github.com/xaionaro-go/gatt/linux/cmd"
@@ -104,6 +105,8 @@ func (d *device) doStartMainLoop(ctx context.Context, args ...any) error {
 		}
 	}
 	d.hci.AcceptSlaveHandler = func(pd *linux.PlatData) {
+		logger.Tracef(ctx, "d.hci.AcceptSlaveHandler()")
+		defer func() { logger.Tracef(ctx, "/d.hci.AcceptSlaveHandler()") }()
 		periph := &peripheral{
 			d:      d,
 			pd:     pd,

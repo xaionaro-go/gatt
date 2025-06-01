@@ -204,6 +204,10 @@ func (p *simPeripheral) WriteDescriptor(ctx context.Context, d *Descriptor, b []
 	return ErrMethodNotSupported
 }
 
+func (p *simPeripheral) Subscribe(vh uint16, f func(*Characteristic, []byte, error)) {
+	panic(ErrMethodNotSupported)
+}
+
 func (p *simPeripheral) SetNotifyValue(ctx context.Context, c *Characteristic, f func(*Characteristic, []byte, error)) error {
 	return ErrMethodNotSupported
 }
