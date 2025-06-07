@@ -111,8 +111,54 @@ func (p *peripheral) DiscoverServices(ctx context.Context, ds []UUID) ([]*Servic
 }
 
 func (p *peripheral) DiscoverIncludedServices(ctx context.Context, ss []UUID, s *Service) ([]*Service, error) {
-	// TODO
-	return nil, nil
+	done := false
+	start := uint16(0x0001)
+	var services []*Service
+	var err error
+	for !done {
+		op := byte(attrOpReadByGroupReq)
+		b := make([]byte, 7)
+		b[0] = op
+		binary.LittleEndian.PutUint16(b[1:3], 0x01)
+		binary.LittleEndian.PutUint16(b[3:5], 0x05)
+		binary.LittleEndian.PutUint16(b[5:7], 0x2802)
+
+		b, err = p.sendReq(ctx, op, b)
+		if err != nil {
+			return nil, fmt.Errorf("unable to send the request: %w", err)
+		}
+		done, err = finish(op, start, b)
+		if done {
+			break
+		}
+		b = b[1:]
+		l, b := int(b[0]), b[1:]
+		switch {
+		case l == 6 && (len(b)%6 == 0):
+		case l == 20 && (len(b)%20 == 0):
+		default:
+			return nil, ErrInvalidLength
+		}
+
+		for len(b) != 0 {
+			endh := binary.LittleEndian.Uint16(b[2:4])
+			u := UUID{b[4:l]}
+
+			if UUIDContains(ss, u) {
+				s := &Service{
+					uuid: u,
+					h:    binary.LittleEndian.Uint16(b[:2]),
+					endh: endh,
+				}
+				services = append(services, s)
+			}
+
+			b = b[l:]
+			done = endh == 0xFFFF
+			start = endh + 1
+		}
+	}
+	return services, err
 }
 
 func (p *peripheral) DiscoverCharacteristics(ctx context.Context, cs []UUID, s *Service) ([]*Characteristic, error) {
@@ -185,7 +231,11 @@ func (p *peripheral) DiscoverDescriptors(ctx context.Context, ds []UUID, c *Char
 	var err error
 	for !done {
 		if c.endh == 0 {
-			c.endh = c.service.endh
+			if c.service == nil {
+				c.endh = 0xffff
+			} else {
+				c.endh = c.service.endh
+			}
 		}
 		op := byte(attrOpFindInfoReq)
 		b := make([]byte, 5)

@@ -3,6 +3,7 @@ package linux
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"unsafe"
 
@@ -41,7 +42,7 @@ func newDevice(ctx context.Context, deviceID int, checkFeatureList bool) (*devic
 	for deviceID := range int(req.devNum) {
 		device, err := newSocket(ctx, fd, deviceID, checkFeatureList)
 		if err == nil {
-			logger.Debugf(ctx, "dev: %s opened", device.name)
+			logger.Debugf(ctx, "dev: %s opened", strings.Trim(device.name, "\000"))
 			return device, nil
 		}
 		logger.Errorf(ctx, "error while opening device %d: %v", deviceID, err)
@@ -64,21 +65,21 @@ func newSocket(
 	// Check the feature list returned feature list.
 	if checkFeatureList && i.features[4]&0x40 == 0 {
 		err := errors.New("does not support LE")
-		logger.Debugf(ctx, "dev: %s %s", name, err)
+		logger.Debugf(ctx, "dev: %s %s", strings.Trim(name, "\000"), err)
 		return nil, err
 	}
-	logger.Debugf(ctx, "dev: %s up", name)
+	logger.Debugf(ctx, "dev: %s up", strings.Trim(name, "\000"))
 	if err := gioctl.Ioctl(uintptr(fd), hciUpDevice, uintptr(deviceID)); err != nil {
 		if err != unix.EALREADY {
 			return nil, err
 		}
-		logger.Debugf(ctx, "dev: %s reset", name)
+		logger.Debugf(ctx, "dev: %s reset", strings.Trim(name, "\000"))
 		if err := gioctl.Ioctl(uintptr(fd), hciResetDevice, uintptr(deviceID)); err != nil {
 			logger.Debugf(ctx, "hciResetDevice failed: %v", err)
 			return nil, err
 		}
 	}
-	logger.Debugf(ctx, "dev: %s down", name)
+	logger.Debugf(ctx, "dev: %s down", strings.Trim(name, "\000"))
 	if err := gioctl.Ioctl(uintptr(fd), hciDownDevice, uintptr(deviceID)); err != nil {
 		return nil, err
 	}
