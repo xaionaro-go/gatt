@@ -266,7 +266,7 @@ func (d *device) Connect(ctx context.Context, p Peripheral) {
 }
 
 func (d *device) CancelConnection(ctx context.Context, p Peripheral) {
-	d.hci.CancelConnection(p.(*peripheral).pd)
+	d.hci.CancelConnection(ctx, p.(*peripheral).pd)
 }
 
 func (d *device) SendHCIRawCommand(ctx context.Context, c cmd.CmdParam) ([]byte, error) {

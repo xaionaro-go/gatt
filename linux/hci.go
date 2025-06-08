@@ -162,7 +162,9 @@ func (h *HCI) Connect(ctx context.Context, pd *PlatData) error {
 	return nil
 }
 
-func (h *HCI) CancelConnection(pd *PlatData) error {
+func (h *HCI) CancelConnection(ctx context.Context, pd *PlatData) (_err error) {
+	logger.Debugf(ctx, "CancelConnection")
+	defer func() { logger.Debugf(ctx, "/CancelConnection: %v", _err) }()
 	if pd != nil && pd.Conn != nil {
 		return pd.Conn.Close()
 	}
@@ -187,14 +189,14 @@ func (h *HCI) mainLoop(ctx context.Context) {
 	}()
 
 	for {
-		// logger.Debugf(ctx, "hci.mainLoop pool.Get")
 		b := h.pool.Get()
 		if b == nil {
 			logger.Debugf(ctx, "got nil buffer, breaking mainLoop")
 			break
 		}
-		// logger.Debugf(ctx, "hci.mainLoop Read(%d)", len(b))
+		logger.Tracef(ctx, "h.device.Read")
 		n, err := h.device.Read(b)
+		logger.Tracef(ctx, "/h.device.Read: %v %X", err, b[:n])
 		if err != nil {
 			if err == unix.EINTR {
 				continue
@@ -204,7 +206,6 @@ func (h *HCI) mainLoop(ctx context.Context) {
 			return
 		}
 		if n > 0 {
-			// logger.Debugf(ctx, "hci.mainLoop -> handlePacket")
 			h.handlePacket(ctx, b, n)
 		}
 	}
@@ -214,6 +215,9 @@ func (h *HCI) mainLoop(ctx context.Context) {
 var ErrVendorNotSupported = fmt.Errorf("vendor packet not supported")
 
 func (h *HCI) handlePacket(ctx context.Context, buf []byte, n int) {
+	logger.Tracef(ctx, "handlePacket(ctx, %X)", buf[:n])
+	defer func() { logger.Tracef(ctx, "/handlePacket(ctx, %X)", buf[:n]) }()
+
 	b := buf[:n]
 	t, b := consts.PacketType(b[0]), b[1:]
 	var err error
@@ -445,7 +449,9 @@ func (h *HCI) handleLEMeta(ctx context.Context, b []byte) error {
 	return nil
 }
 
-func (h *HCI) handleL2CAP(ctx context.Context, b []byte) error {
+func (h *HCI) handleL2CAP(ctx context.Context, b []byte) (_err error) {
+	logger.Tracef(ctx, "handleL2CAP(ctx, %X)", b)
+	defer func() { logger.Tracef(ctx, "/handleL2CAP(ctx, %X): %v", b, _err) }()
 	a := &aclData{}
 	if err := a.unmarshal(b); err != nil {
 		return err

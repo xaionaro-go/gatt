@@ -50,6 +50,9 @@ func newConn(ctx context.Context, hci *HCI, hh uint16) *conn {
 }
 
 func (c *conn) loop(ctx context.Context) {
+	logger.Debugf(ctx, "loop")
+	defer func() { logger.Debugf(ctx, "/loop") }()
+
 	defer close(c.dataCh)
 	for a := range c.aclCh {
 		if len(a.b) < 4 {
@@ -68,12 +71,18 @@ func (c *conn) loop(ctx context.Context) {
 		n := len(d)
 
 		// Keep receiving and reassemble continued l2cap segments
-		for n != tLen {
-			a, ok := <-c.aclCh
-			if !ok || (a.flags&0x1) == 0 {
-				return
+		if !func() bool {
+			for n != tLen {
+				a, ok := <-c.aclCh
+				if !ok || (a.flags&0x1) == 0 {
+					logger.Warnf(ctx, "!ok || (a.flags&0x1) == 0; a.flags == 0x%X", a.flags)
+					return false
+				}
+				n += copy(b[n:], a.b)
 			}
-			n += copy(b[n:], a.b)
+			return true
+		}() {
+			continue
 		}
 		c.dataCh <- b[:n]
 	}

@@ -28,7 +28,7 @@ type peripheral struct {
 	sub *subscriber
 
 	mtu uint16
-	l2c io.ReadWriteCloser
+	l2c io.ReadWriter
 
 	reqCh  chan message
 	quitCh chan struct{}
