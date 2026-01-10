@@ -27,7 +27,9 @@ func (a *aclData) unmarshal(b []byte) error {
 		return fmt.Errorf("malformed acl packet")
 	}
 
-	*a = aclData{attr: attr, flags: flags, dLen: dLen, b: b[4:]}
+	data := make([]byte, dLen)
+	copy(data, b[4:])
+	*a = aclData{attr: attr, flags: flags, dLen: dLen, b: data}
 	return nil
 }
 
@@ -54,37 +56,53 @@ func (c *conn) loop(ctx context.Context) {
 	defer func() { logger.Debugf(ctx, "/loop") }()
 
 	defer close(c.dataCh)
-	for a := range c.aclCh {
-		if len(a.b) < 4 {
-			logger.Debugf(ctx, "l2conn: short/corrupt packet, %v [% X]", a, a.b)
-			return
-		}
-		cid := uint16(a.b[2]) | (uint16(a.b[3]) << 8)
-		if cid == 5 {
-			c.handleSignal(ctx, a)
-			continue
-		}
-		b := make([]byte, 512)
-		tLen := int(uint16(a.b[0]) | uint16(a.b[1])<<8)
-		d := a.b[4:] // skip l2cap header
-		copy(b, d)
-		n := len(d)
 
-		// Keep receiving and reassemble continued l2cap segments
-		if !func() bool {
-			for n != tLen {
-				a, ok := <-c.aclCh
-				if !ok || (a.flags&0x1) == 0 {
-					logger.Warnf(ctx, "!ok || (a.flags&0x1) == 0; a.flags == 0x%X", a.flags)
-					return false
-				}
-				n += copy(b[n:], a.b)
-			}
-			return true
-		}() {
+	var buf []byte
+	for a := range c.aclCh {
+		if len(a.b) < 1 {
 			continue
 		}
-		c.dataCh <- b[:n]
+
+		// PB Flag (bits 0-1 of flags):
+		// 00: Non-flushable Start
+		// 01: Continuing Fragment
+		// 10: Flushable Start
+		// 11: Complete PDU (not used in LE usually, or same as Start)
+		isStart := (a.flags & 0x3) != 0x1
+
+		if isStart {
+			if len(buf) > 0 {
+				// We were in the middle of reassembling a PDU, but a new Start arrived.
+				// This happens sometimes with DJI devices or due to Bluetooth stack issues.
+				logger.Debugf(ctx, "L2CAP reassembly reset: dropping %d bytes of incomplete PDU and starting new one", len(buf))
+			}
+			buf = append([]byte{}, a.b...)
+		} else {
+			buf = append(buf, a.b...)
+		}
+
+		// Process all complete PDUs in the buffer
+		for len(buf) >= 4 {
+			tLen := int(uint16(buf[0]) | uint16(buf[1])<<8)
+			cid := uint16(buf[2]) | (uint16(buf[3]) << 8)
+			pduLen := 4 + tLen
+
+			if len(buf) < pduLen {
+				// We need more fragments
+				break
+			}
+
+			// We have a full PDU
+			pdu := buf[4:pduLen]
+			if cid == 5 {
+				c.handleSignal(ctx, &aclData{attr: c.attr, flags: a.flags, b: buf[:pduLen]})
+			} else {
+				c.dataCh <- append([]byte{}, pdu...)
+			}
+
+			// Advance buffer
+			buf = buf[pduLen:]
+		}
 	}
 }
 
