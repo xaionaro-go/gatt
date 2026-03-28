@@ -1,15 +1,20 @@
 module github.com/xaionaro-go/gatt
 
-go 1.24.1
+go 1.25.0
 
 require (
+	github.com/AndroidGoLab/binder v0.0.7
+	github.com/AndroidGoLab/jni v0.0.7
+	github.com/AndroidGoLab/jni-proxy v0.0.6-0.20260328182641-74b6a6bf90b9
 	github.com/facebookincubator/go-belt v0.0.0-20250308011339-62fb7027b11f
 	github.com/xaionaro-go/ctxflow v0.0.0-20250530224412-dee18b630ad7
-	golang.org/x/sys v0.33.0
+	golang.org/x/sys v0.42.0
+	google.golang.org/grpc v1.79.2
 )
 
 require (
 	github.com/DataDog/gostackparse v0.7.0 // indirect
+	github.com/cyphar/filepath-securejoin v0.5.1 // indirect
 	github.com/go-ng/slices v0.0.0-20230703171042-6195d35636a2 // indirect
 	github.com/go-ng/sort v0.0.0-20220617173827-2cc7cd04f7c7 // indirect
 	github.com/go-ng/xatomic v0.0.0-20230519181013-85c0ec87e55f // indirect
@@ -17,6 +22,7 @@ require (
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/huandu/go-tls v0.0.0-20200109070953-6f75fb441850 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.7 // indirect
+	github.com/opencontainers/selinux v1.13.1 // indirect
 	github.com/phuslu/goid v1.0.1 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/xaionaro-go/gorex v0.0.0-20241010205749-bcd59d639c4d // indirect
@@ -26,6 +32,11 @@ require (
 	github.com/xaionaro-go/spinlock v0.0.0-20200518175509-30e6d1ce68a1 // indirect
 	github.com/xaionaro-go/unsafetools v0.0.0-20241024014258-a46e1ce3763e // indirect
 	github.com/xaionaro-go/xsync v0.0.0-20250511184922-deec5fb01a0f // indirect
-	golang.org/x/exp v0.0.0-20240823005443-9b4947da3948 // indirect
+	golang.org/x/crypto v0.47.0 // indirect
+	golang.org/x/exp v0.0.0-20251023183803-a4bb9ffd2546 // indirect
+	golang.org/x/net v0.48.0 // indirect
+	golang.org/x/text v0.33.0 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20251202230838-ff82c1b0f217 // indirect
+	google.golang.org/protobuf v1.36.11 // indirect
 	lukechampine.com/blake3 v1.3.0 // indirect
 )

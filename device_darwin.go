@@ -60,6 +60,10 @@ type device struct {
 	subscribers map[string]*central
 }
 
+func (d *device) getDeviceHandler() *deviceHandler {
+	return &d.deviceHandler
+}
+
 func NewDevice(opts ...Option) (Device, error) {
 	d := &device{
 		reqc:       make(chan message),

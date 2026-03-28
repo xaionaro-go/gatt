@@ -34,6 +34,10 @@ type device struct {
 	scanParam *cmd.LESetScanParameters
 }
 
+func (d *device) getDeviceHandler() *deviceHandler {
+	return &d.deviceHandler
+}
+
 func NewDevice(ctx context.Context, opts ...Option) (Device, error) {
 	d := &device{
 		maxConn: 1,    // Support 1 connection at a time.

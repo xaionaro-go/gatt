@@ -38,6 +38,12 @@ func newResponseWriter(c int) *responseWriter {
 	}
 }
 
+// NewResponseWriter creates a ResponseWriter with the given capacity.
+// Exported for use by external backend packages (e.g. android/jni).
+func NewResponseWriter(capacity int) *responseWriter {
+	return newResponseWriter(capacity)
+}
+
 func (w *responseWriter) Write(b []byte) (int, error) {
 	if avail := w.capacity - w.buf.Len(); avail < len(b) {
 		return 0, fmt.Errorf("requested write %d bytes, %d available", len(b), avail)
@@ -47,6 +53,10 @@ func (w *responseWriter) Write(b []byte) (int, error) {
 
 func (w *responseWriter) SetStatus(status byte) { w.status = status }
 func (w *responseWriter) bytes() []byte         { return w.buf.Bytes() }
+
+// Bytes returns the written response data.
+// Exported for use by external backend packages (e.g. android/jni).
+func (w *responseWriter) Bytes() []byte { return w.buf.Bytes() }
 
 // A ReadHandler handles GATT read requests.
 type ReadHandler interface {

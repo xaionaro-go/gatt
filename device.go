@@ -116,15 +116,86 @@ type deviceHandler struct {
 	peripheralDisconnected func(ctx context.Context, p Peripheral, err error)
 }
 
+// DeviceHandler provides exported access to device callbacks for external backend packages.
+// External packages (e.g. android backends in separate modules) can embed DeviceHandler
+// in their device types to satisfy the deviceHandlerProvider interface.
+type DeviceHandler struct {
+	deviceHandler
+}
+
+func (h *DeviceHandler) getDeviceHandler() *deviceHandler {
+	return &h.deviceHandler
+}
+
+// StateChanged returns the current state-changed callback, or nil if not set.
+func (h *DeviceHandler) StateChanged() func(context.Context, Device, State) {
+	return h.stateChanged
+}
+
+// SetStateChanged sets the state-changed callback.
+func (h *DeviceHandler) SetStateChanged(f func(context.Context, Device, State)) {
+	h.stateChanged = f
+}
+
+// CentralConnected returns the current central-connected callback, or nil if not set.
+func (h *DeviceHandler) CentralConnected() func(context.Context, Central) {
+	return h.centralConnected
+}
+
+// SetCentralConnected sets the central-connected callback.
+func (h *DeviceHandler) SetCentralConnected(f func(context.Context, Central)) {
+	h.centralConnected = f
+}
+
+// CentralDisconnected returns the current central-disconnected callback, or nil if not set.
+func (h *DeviceHandler) CentralDisconnected() func(context.Context, Central) {
+	return h.centralDisconnected
+}
+
+// SetCentralDisconnected sets the central-disconnected callback.
+func (h *DeviceHandler) SetCentralDisconnected(f func(context.Context, Central)) {
+	h.centralDisconnected = f
+}
+
+// PeripheralDiscovered returns the current peripheral-discovered callback, or nil if not set.
+func (h *DeviceHandler) PeripheralDiscovered() func(context.Context, Peripheral, *Advertisement, int) {
+	return h.peripheralDiscovered
+}
+
+// SetPeripheralDiscovered sets the peripheral-discovered callback.
+func (h *DeviceHandler) SetPeripheralDiscovered(f func(context.Context, Peripheral, *Advertisement, int)) {
+	h.peripheralDiscovered = f
+}
+
+// PeripheralConnected returns the current peripheral-connected callback, or nil if not set.
+func (h *DeviceHandler) PeripheralConnected() func(context.Context, Peripheral, error) {
+	return h.peripheralConnected
+}
+
+// SetPeripheralConnected sets the peripheral-connected callback.
+func (h *DeviceHandler) SetPeripheralConnected(f func(context.Context, Peripheral, error)) {
+	h.peripheralConnected = f
+}
+
+// PeripheralDisconnected returns the current peripheral-disconnected callback, or nil if not set.
+func (h *DeviceHandler) PeripheralDisconnected() func(context.Context, Peripheral, error) {
+	return h.peripheralDisconnected
+}
+
+// SetPeripheralDisconnected sets the peripheral-disconnected callback.
+func (h *DeviceHandler) SetPeripheralDisconnected(f func(context.Context, Peripheral, error)) {
+	h.peripheralDisconnected = f
+}
+
+type deviceHandlerProvider interface {
+	getDeviceHandler() *deviceHandler
+}
+
 func getDeviceHandler(d Device) *deviceHandler {
-	switch t := d.(type) {
-	case *device:
-		return &t.deviceHandler
-	case *simDevice:
-		return &t.deviceHandler
-	default:
-		return nil
+	if p, ok := d.(deviceHandlerProvider); ok {
+		return p.getDeviceHandler()
 	}
+	return nil
 }
 
 // A Handler is a self-referential function, which registers the options specified.

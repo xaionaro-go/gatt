@@ -21,6 +21,10 @@ type simDevice struct {
 	subscribers       map[uint16]func(*Characteristic, []byte, error)
 }
 
+func (d *simDevice) getDeviceHandler() *deviceHandler {
+	return &d.deviceHandler
+}
+
 func NewSimDeviceClient(service *Service, advertisedName string) *simDevice {
 	return &simDevice{
 		service:        service,
