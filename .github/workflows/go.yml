@@ -2,24 +2,77 @@ name: Go
 
 on:
   push:
-    branches: [ master ]
+    branches: [master]
   pull_request:
-    branches: [ master ]
+    branches: [master]
 
 jobs:
-
-  build:
+  test-linux:
+    name: Test (Linux)
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
 
-    - name: Set up Go
-      uses: actions/setup-go@v2
-      with:
-        go-version: 1.17
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
 
-    - name: Build
-      run: go build -v ./...
+      - name: Build
+        run: go build -v ./...
 
-    - name: Test
-      run: go test -v ./...
+      - name: Test
+        run: go test -v ./...
+
+      - name: Vet
+        run: go vet ./...
+
+  build-android:
+    name: Build (Android)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+
+      - name: Resolve NDK cross-compiler
+        id: ndk
+        run: |
+          NDK_DIR=$(ls -d "$ANDROID_HOME"/ndk/*/ 2>/dev/null | sort -V | tail -1)
+          CC="${NDK_DIR}toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang"
+          if [ ! -x "$CC" ]; then
+            echo "::error::NDK cross-compiler not found at $CC"
+            exit 1
+          fi
+          echo "cc=$CC" >> "$GITHUB_OUTPUT"
+
+      - name: Build android/binder
+        run: GOOS=android GOARCH=arm64 CGO_ENABLED=0 go build -v ./android/binder/...
+
+      - name: Build android/jniproxy
+        run: GOOS=android GOARCH=arm64 CGO_ENABLED=0 go build -v ./android/jniproxy/...
+
+      - name: Build android/jni (cgo)
+        env:
+          CC: ${{ steps.ndk.outputs.cc }}
+        run: GOOS=android GOARCH=arm64 CGO_ENABLED=1 go build -v ./android/jni/...
+
+      - name: Vet android/binder
+        run: GOOS=android GOARCH=arm64 CGO_ENABLED=0 go vet ./android/binder/...
+
+      - name: Vet android/jniproxy
+        run: GOOS=android GOARCH=arm64 CGO_ENABLED=0 go vet ./android/jniproxy/...
+
+      - name: Vet android/jni (cgo)
+        env:
+          CC: ${{ steps.ndk.outputs.cc }}
+        run: GOOS=android GOARCH=arm64 CGO_ENABLED=1 go vet ./android/jni/...
+
+      - name: Build examples
+        env:
+          CC: ${{ steps.ndk.outputs.cc }}
+        run: |
+          GOOS=android GOARCH=arm64 CGO_ENABLED=0 go build -o /dev/null examples/android/binder_scan.go
+          GOOS=android GOARCH=arm64 CGO_ENABLED=1 go build -o /dev/null examples/android/jni_scan.go
+          CGO_ENABLED=0 go build -o /dev/null examples/android/jniproxy_scan.go
