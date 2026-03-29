@@ -7,13 +7,21 @@ advertise, accept connections, and handle requests.
 
 As a central, you can scan, connect, discover services, and make requests.
 
-## SETUP
+This is a fork of [github.com/paypal/gatt](https://github.com/paypal/gatt) with
+Android support, refactoring, bug fixes, and ongoing maintenance.
 
-### gatt supports both Linux and OS X.
+## Supported Platforms
 
-### On Linux:
+- **Linux** -- native HCI socket access via `HCI_CHANNEL_USER`
+- **macOS (Darwin)** -- via XPC
+- **Android** -- three pluggable backends (see [Android](#android) below)
+
+## Setup
+
+### Linux
+
 To gain complete and exclusive control of the HCI device, gatt uses
-HCI_CHANNEL_USER (introduced in Linux v3.14) instead of HCI_CHANNEL_RAW.
+`HCI_CHANNEL_USER` (introduced in Linux v3.14) instead of `HCI_CHANNEL_RAW`.
 Those who must use an older kernel may patch in these relevant commits
 from Marcel Holtmann:
 
@@ -21,7 +29,7 @@ from Marcel Holtmann:
     Bluetooth: Introduce user channel flag for HCI devices
     Bluetooth: Refactor raw socket filter into more readable code
 
-Note that because gatt uses HCI_CHANNEL_USER, once gatt has opened the
+Note that because gatt uses `HCI_CHANNEL_USER`, once gatt has opened the
 device no other program may access it.
 
 Before starting a gatt program, make sure that your BLE device is down:
@@ -42,74 +50,79 @@ either be run as root, or be granted appropriate capabilities:
     sudo setcap 'cap_net_raw,cap_net_admin=eip' <executable>
     <executable>
 
+### Android
+
+Android is supported via three backends, selectable through the registry in
+`android/registry.go`:
+
+| Backend | Package | CGO | Description |
+|---------|---------|-----|-------------|
+| **Binder** | `android/binder` | No | Pure-Go Binder IPC to the Android Bluetooth stack |
+| **JNI** | `android/jni` | Yes | JNI calls into the Android Bluetooth Java API |
+| **JNIProxy** | `android/jniproxy` | No | gRPC-based remote access to JNI on another device |
+
+See `examples/android/` for scanning examples using each backend.
+
 ## Usage
-Please see [godoc.org](http://godoc.org/github.com/paypal/gatt) for documentation.
+
+Please see [pkg.go.dev](https://pkg.go.dev/github.com/xaionaro-go/gatt) for API documentation.
 
 ## Examples
 
-### Build and run the examples on a native environment (Linux or OS X)
-
-Go is a compiled language, which means to run the examples you need to build them first.
-
-    # Build the sample server.
-    go build examples/server.go
-    # Start the sample server.
-    sudo ./server
-
-Alternatively, you can use "go run" to build and run the examples in a single step:
+### Linux / macOS
 
     # Build and run the sample server.
     sudo go run examples/server.go
 
-Discoverer and explorer demonstrates central (client) functions:
-
     # Discover surrounding peripherals.
     sudo go run examples/discoverer.go
 
-    # Connect to and explorer a peripheral device.
+    # Connect to and explore a peripheral device.
     sudo go run examples/explorer.go <peripheral ID>
 
-### Cross-compile and deploy to a target device
+See `examples/server_lnx.go` for Linux-specific options giving
+finer-grained control over the HCI device.
 
-    # Build and run the server example on a ARMv5 target device.
+### Cross-compile for a target device
+
+    # Build for an ARMv5 Linux target.
     GOARCH=arm GOARM=5 GOOS=linux go build examples/server.go
-    cp server <target device>
-    # Start the server on the target device
+    # Copy to target and run.
     sudo ./server
 
-See the server.go, discoverer.go, and explorer.go in the examples/
-directory for writing server or client programs that run on Linux
-and OS X.
+### Android
 
-Users, especially on Linux platforms, seeking finer-grained control
-over the devices can see the examples/server_lnx.go for the usage
-of Option, which are platform specific.
+    # Scan using the Binder backend (pure Go, no CGO).
+    GOOS=android GOARCH=arm64 CGO_ENABLED=0 go build examples/android/binder_scan.go
 
-See the rest of the docs for other options and finer-grained control.
+    # Scan using JNI (requires NDK cross-compiler).
+    GOOS=android GOARCH=arm64 CGO_ENABLED=1 go build examples/android/jni_scan.go
+
+    # Scan using JNIProxy (pure Go client, connects to an Android device via gRPC).
+    # Runs on any host platform, not only Android.
+    CGO_ENABLED=0 go build examples/android/jniproxy_scan.go
+
+## Simulated Device
+
+`sim_device.go` provides an in-memory simulated BLE device for testing
+without physical hardware. Use `NewSimDeviceClient()` to create one.
 
 ## Note
-Note that some BLE central devices, particularly iOS, may aggressively
+
+Some BLE central devices, particularly iOS, may aggressively
 cache results from previous connections. If you change your services or
 characteristics, you may need to reboot the other device to pick up the
 changes. This is a common source of confusion and apparent bugs. For an
 OS X central, see http://stackoverflow.com/questions/20553957.
 
-## Known Issues
+## References
 
-Currently OS X vesion  does not support subscribing to indications. 
-Please check [#32](https://github.com/paypal/gatt/issues/32) for the status of this issue.
+gatt started life as a port of [bleno](https://github.com/sandeepmistry/bleno),
+to which it is indebted. If you are having problems with gatt, particularly
+around installation, issues filed with bleno might also be helpful references.
 
-## REFERENCES
+To try out your GATT server, it is useful to experiment with a generic BLE
+client. [LightBlue](https://punchthrough.com/lightblue/) is a good choice,
+available free for both iOS and macOS.
 
-gatt started life as a port of bleno, to which it is indebted:
-https://github.com/sandeepmistry/bleno. If you are having
-problems with gatt, particularly around installation, issues
-filed with bleno might also be helpful references.
-
-To try out your GATT server, it is useful to experiment with a
-generic BLE client. LightBlue is a good choice. It is available
-free for both iOS and OS X.
-
-gatt is similar to [bleno](https://github.com/sandeepmistry/bleno) and [noble](https://github.com/sandeepmistry/noble), which offer BLE GATT implementations for node.js.
-
-Gatt is released under a [BSD-style license](./LICENSE.md).
+gatt is released under a [BSD-style license](./LICENSE.md).
