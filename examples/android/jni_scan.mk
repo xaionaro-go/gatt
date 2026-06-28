@@ -62,8 +62,8 @@ $(BUILD)/AndroidManifest.xml:
 
 HANDLER_JAVA     := $(HANDLER_DIR)/center/dx/jni/internal/GoInvocationHandler.java
 DISPATCH_JAVA    := $(HANDLER_DIR)/center/dx/jni/internal/GoAbstractDispatch.java
-SCAN_CB_JAVA     := java/center/dx/gatt/internal/GoScanCallback.java
-GATT_CB_JAVA     := java/center/dx/gatt/internal/GoGattCallback.java
+SCAN_CB_JAVA     := ../../android/jni/java/center/dx/gatt/internal/GoScanCallback.java
+GATT_CB_JAVA     := ../../android/jni/java/center/dx/gatt/internal/GoGattCallback.java
 
 $(BUILD)/classes.dex: $(HANDLER_JAVA) $(DISPATCH_JAVA) $(SCAN_CB_JAVA) $(GATT_CB_JAVA)
 	@mkdir -p $(BUILD)/java

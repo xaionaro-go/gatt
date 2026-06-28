@@ -16,10 +16,6 @@ func TestAndroidBluetoothGattCallbackAdapterMatchesJNIAbstractLookup(t *testing.
 
 	javaFile := filepath.Join(
 		filepath.Dir(testFile),
-		"..",
-		"..",
-		"examples",
-		"android",
 		"java",
 		"center",
 		"dx",

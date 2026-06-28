@@ -16,6 +16,7 @@ import (
 	"github.com/AndroidGoLab/jni/bluetooth/le"
 	"github.com/xaionaro-go/gatt"
 	"github.com/xaionaro-go/gatt/android"
+	"github.com/xaionaro-go/observability"
 )
 
 const (
@@ -647,6 +648,81 @@ func (d *device) StopScanning() (_err error) {
 	return _err
 }
 
+type androidGATTConnectionResources struct {
+	gatt            *bluetooth.Gatt
+	callbackRef     *jnipkg.Object
+	callbackCleanup func()
+	closeGATT       func(*bluetooth.Gatt) error
+	deleteGlobalRef func(*jnipkg.Object) error
+}
+
+func (d *device) releaseConnectedPeripheral(
+	per *peripheral,
+	resources androidGATTConnectionResources,
+) error {
+	closeGATT := resources.closeGATT
+	if closeGATT == nil {
+		closeGATT = closeAndroidGATT
+	}
+
+	deleteGlobalRef := resources.deleteGlobalRef
+	if deleteGlobalRef == nil {
+		deleteGlobalRef = d.deleteGlobalRef
+	}
+
+	per.mu.Lock()
+	if per.gattObj == resources.gatt {
+		per.gattObj = nil
+		per.gattCallbackCleanup = nil
+	}
+	per.mu.Unlock()
+
+	var errs []error
+	if resources.gatt != nil {
+		if err := closeGATT(resources.gatt); err != nil {
+			errs = append(errs, fmt.Errorf("close BluetoothGatt: %w", err))
+		}
+		if resources.gatt.Obj != nil {
+			if err := deleteGlobalRef(resources.gatt.Obj); err != nil {
+				errs = append(errs, fmt.Errorf("delete BluetoothGatt global ref: %w", err))
+			}
+			resources.gatt.Obj = nil
+		}
+	}
+	if resources.callbackRef != nil {
+		if err := deleteGlobalRef(resources.callbackRef); err != nil {
+			errs = append(errs, fmt.Errorf("delete GATT callback global ref: %w", err))
+		}
+	}
+	if resources.callbackCleanup != nil {
+		resources.callbackCleanup()
+	}
+
+	return errors.Join(errs...)
+}
+
+func closeAndroidGATT(
+	g *bluetooth.Gatt,
+) error {
+	if g == nil {
+		return nil
+	}
+	return g.Close()
+}
+
+func (d *device) deleteGlobalRef(
+	obj *jnipkg.Object,
+) error {
+	if obj == nil {
+		return nil
+	}
+
+	return d.vm.Do(func(env *jnipkg.Env) error {
+		env.DeleteGlobalRef(obj)
+		return nil
+	})
+}
+
 func (d *device) Connect(ctx context.Context, p gatt.Peripheral) {
 	logger.Tracef(ctx, "jni.device.Connect")
 	defer func() { logger.Tracef(ctx, "/jni.device.Connect") }()
@@ -731,33 +807,27 @@ func (d *device) Connect(ctx context.Context, p gatt.Peripheral) {
 	per.gattCallbackCleanup = gattCleanup
 	per.mu.Unlock()
 
-	// Store the callback object global ref for cleanup.
-	gattCallbackRef := gattCallbackObj
+	connectionResources := androidGATTConnectionResources{
+		gatt:            gatt,
+		callbackRef:     gattCallbackObj,
+		callbackCleanup: gattCleanup,
+	}
 
 	// Wait for onConnectionStateChange.
 	select {
 	case <-ctx.Done():
+		cleanupErr := d.releaseConnectedPeripheral(per, connectionResources)
 		handler := d.PeripheralConnected()
 		if handler != nil {
-			handler(ctx, p, ctx.Err())
+			handler(ctx, p, errors.Join(ctx.Err(), cleanupErr))
 		}
 		return
 	case newState := <-per.connStateChanged:
 		if newState != stateConnected {
-			// Connection failed.
-			_ = d.vm.Do(func(env *jnipkg.Env) error {
-				env.DeleteGlobalRef(gattCallbackRef)
-				return nil
-			})
-			gattCleanup()
-			per.mu.Lock()
-			per.gattObj = nil
-			per.gattCallbackCleanup = nil
-			per.mu.Unlock()
-
+			cleanupErr := d.releaseConnectedPeripheral(per, connectionResources)
 			handler := d.PeripheralConnected()
 			if handler != nil {
-				handler(ctx, p, fmt.Errorf("connection failed: state=%d", newState))
+				handler(ctx, p, errors.Join(fmt.Errorf("connection failed: state=%d", newState), cleanupErr))
 			}
 			return
 		}
@@ -769,7 +839,9 @@ func (d *device) Connect(ctx context.Context, p gatt.Peripheral) {
 	}
 
 	// Monitor for disconnection in a separate goroutine.
-	go d.monitorDisconnection(ctx, per, gattCallbackRef, gattCleanup)
+	observability.Go(ctx, func(ctx context.Context) {
+		d.monitorDisconnection(ctx, per, connectionResources)
+	})
 }
 
 // monitorDisconnection waits for a disconnection event and calls the
@@ -777,8 +849,7 @@ func (d *device) Connect(ctx context.Context, p gatt.Peripheral) {
 func (d *device) monitorDisconnection(
 	ctx context.Context,
 	per *peripheral,
-	callbackRef *jnipkg.Object,
-	callbackCleanup func(),
+	connectionResources androidGATTConnectionResources,
 ) {
 	select {
 	case <-ctx.Done():
@@ -786,28 +857,11 @@ func (d *device) monitorDisconnection(
 		_ = newState // Always means disconnected at this point.
 	}
 
-	per.mu.Lock()
-	g := per.gattObj
-	per.gattObj = nil
-	per.gattCallbackCleanup = nil
-	per.mu.Unlock()
-
-	if g != nil {
-		_ = g.Close()
-	}
-	_ = d.vm.Do(func(env *jnipkg.Env) error {
-		if callbackRef != nil {
-			env.DeleteGlobalRef(callbackRef)
-		}
-		return nil
-	})
-	if callbackCleanup != nil {
-		callbackCleanup()
-	}
+	cleanupErr := d.releaseConnectedPeripheral(per, connectionResources)
 
 	handler := d.PeripheralDisconnected()
 	if handler != nil {
-		handler(ctx, per, nil)
+		handler(ctx, per, cleanupErr)
 	}
 }
 

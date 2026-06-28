@@ -50,9 +50,12 @@ type peripheral struct {
 	addr  string
 	name  string
 
-	mu      sync.Mutex
-	gattObj *bluetooth.Gatt
-	writeMu sync.Mutex
+	mu           sync.Mutex
+	gattObj      *bluetooth.Gatt
+	writeMu      sync.Mutex
+	writeStateMu sync.Mutex
+	writeDone    chan error
+	writeErr     error
 
 	services []*gatt.Service
 
@@ -71,7 +74,6 @@ type peripheral struct {
 	connStateChanged   chan int32
 	servicesDiscovered chan error
 	charRead           chan charReadResult
-	charWritten        chan error
 	descRead           chan descReadResult
 	descWritten        chan error
 	rssiRead           chan rssiResult
@@ -110,7 +112,6 @@ func newPeripheral(
 		connStateChanged:   make(chan int32, 1),
 		servicesDiscovered: make(chan error, 1),
 		charRead:           make(chan charReadResult, 1),
-		charWritten:        make(chan error, 1),
 		descRead:           make(chan descReadResult, 1),
 		descWritten:        make(chan error, 1),
 		rssiRead:           make(chan rssiResult, 1),
@@ -464,24 +465,99 @@ func (p *peripheral) WriteCharacteristic(
 		return err
 	}
 
+	writeDone, err := p.beginCharacteristicWrite()
+	if err != nil {
+		return err
+	}
+
 	ok, err := g.WriteCharacteristic1(charObj)
 	if err != nil {
+		p.finishCharacteristicWrite(writeDone)
 		return fmt.Errorf("writeCharacteristic JNI call: %w", err)
 	}
 	if !ok {
+		p.finishCharacteristicWrite(writeDone)
 		return fmt.Errorf("writeCharacteristic returned false")
 	}
 
-	return p.waitForCharacteristicWrite(ctx)
+	return p.waitForCharacteristicWrite(ctx, writeDone)
+}
+
+func (p *peripheral) beginCharacteristicWrite() (chan error, error) {
+	p.writeStateMu.Lock()
+	defer p.writeStateMu.Unlock()
+
+	if p.writeErr != nil {
+		return nil, fmt.Errorf("previous characteristic write did not complete: %w", p.writeErr)
+	}
+	if p.writeDone != nil {
+		return nil, fmt.Errorf("characteristic write already pending")
+	}
+
+	writeDone := make(chan error, 1)
+	p.writeDone = writeDone
+	return writeDone, nil
+}
+
+func (p *peripheral) finishCharacteristicWrite(
+	writeDone chan error,
+) {
+	p.writeStateMu.Lock()
+	defer p.writeStateMu.Unlock()
+
+	if p.writeDone == writeDone {
+		p.writeDone = nil
+	}
+}
+
+func (p *peripheral) failCharacteristicWrite(
+	err error,
+	writeDone chan error,
+) {
+	p.writeStateMu.Lock()
+	defer p.writeStateMu.Unlock()
+
+	if p.writeDone != writeDone {
+		return
+	}
+	p.writeDone = nil
+	p.writeErr = err
+}
+
+func (p *peripheral) hasPendingCharacteristicWrite() bool {
+	p.writeStateMu.Lock()
+	defer p.writeStateMu.Unlock()
+
+	return p.writeDone != nil
+}
+
+func (p *peripheral) handleCharacteristicWrite(
+	err error,
+) {
+	p.writeStateMu.Lock()
+	writeDone := p.writeDone
+	p.writeStateMu.Unlock()
+
+	if writeDone == nil {
+		return
+	}
+
+	select {
+	case writeDone <- err:
+	default:
+	}
 }
 
 func (p *peripheral) waitForCharacteristicWrite(
 	ctx context.Context,
+	writeDone chan error,
 ) error {
 	select {
 	case <-ctx.Done():
+		p.failCharacteristicWrite(ctx.Err(), writeDone)
 		return ctx.Err()
-	case err := <-p.charWritten:
+	case err := <-writeDone:
+		p.finishCharacteristicWrite(writeDone)
 		return err
 	}
 }
@@ -808,10 +884,7 @@ func (p *peripheral) handleGattCallback(
 				err = fmt.Errorf("onCharacteristicWrite status=%d", status)
 			}
 		}
-		select {
-		case p.charWritten <- err:
-		default:
-		}
+		p.handleCharacteristicWrite(err)
 
 	case "onCharacteristicChanged":
 		// Newer API (API 33+): args: gatt, characteristic, value (byte[])
