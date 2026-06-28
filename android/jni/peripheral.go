@@ -52,6 +52,7 @@ type peripheral struct {
 
 	mu      sync.Mutex
 	gattObj *bluetooth.Gatt
+	writeMu sync.Mutex
 
 	services []*gatt.Service
 
@@ -425,6 +426,9 @@ func (p *peripheral) WriteCharacteristic(
 		return fmt.Errorf("characteristic not found (vh=%d)", c.VHandle())
 	}
 
+	p.writeMu.Lock()
+	defer p.writeMu.Unlock()
+
 	vm := p.d.vm
 
 	// Use the deprecated setValue+writeCharacteristic API for broad compatibility.
@@ -468,11 +472,12 @@ func (p *peripheral) WriteCharacteristic(
 		return fmt.Errorf("writeCharacteristic returned false")
 	}
 
-	if noResp {
-		// Write-without-response does not get a callback.
-		return nil
-	}
+	return p.waitForCharacteristicWrite(ctx)
+}
 
+func (p *peripheral) waitForCharacteristicWrite(
+	ctx context.Context,
+) error {
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
