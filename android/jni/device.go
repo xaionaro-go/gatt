@@ -459,6 +459,12 @@ func (d *device) processScanResult(
 	if devObj == nil {
 		return
 	}
+	releaseDevObj := true
+	defer func() {
+		if releaseDevObj {
+			env.DeleteGlobalRef(devObj)
+		}
+	}()
 
 	btDev := &bluetooth.Device{VM: d.vm, Obj: devObj}
 
@@ -475,24 +481,11 @@ func (d *device) processScanResult(
 		logger.Debugf(ctx, "scanResult.GetRssi failed: %v", err)
 	}
 
-	// Find or create the peripheral.
-	d.mu.Lock()
-	p, exists := d.peripherals[addr]
-	if !exists {
-		p = newPeripheral(d, btDev, addr, name)
-		d.peripherals[addr] = p
-	} else {
-		// Update the name if it was previously empty.
-		if p.name == "" && name != "" {
-			p.name = name
-		}
-		// Don't report duplicates unless requested.
-		if !dup {
-			d.mu.Unlock()
-			return
-		}
+	p, retainedDevObj, shouldReport := d.rememberScanDevice(addr, name, btDev, dup)
+	releaseDevObj = !retainedDevObj
+	if !shouldReport {
+		return
 	}
-	d.mu.Unlock()
 
 	adv := &gatt.Advertisement{
 		LocalName: name,
@@ -529,6 +522,31 @@ func (d *device) processScanResult(
 	if handler != nil {
 		handler(ctx, p, adv, int(rssi))
 	}
+}
+
+func (d *device) rememberScanDevice(
+	addr string,
+	name string,
+	btDev *bluetooth.Device,
+	dup bool,
+) (_ *peripheral, retainedDeviceRef bool, report bool) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	p, exists := d.peripherals[addr]
+	if !exists {
+		p = newPeripheral(d, btDev, addr, name)
+		d.peripherals[addr] = p
+		return p, true, true
+	}
+
+	if p.name == "" && name != "" {
+		p.name = name
+	}
+	if !dup {
+		return p, false, false
+	}
+	return p, false, true
 }
 
 func (d *device) logScanDiagnostic(
