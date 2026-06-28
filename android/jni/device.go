@@ -1,10 +1,13 @@
 package jni
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
+
 	"github.com/facebookincubator/go-belt/tool/logger"
 
 	jnipkg "github.com/AndroidGoLab/jni"
@@ -13,6 +16,12 @@ import (
 	"github.com/AndroidGoLab/jni/bluetooth/le"
 	"github.com/xaionaro-go/gatt"
 	"github.com/xaionaro-go/gatt/android"
+)
+
+const (
+	androidScanModeLowLatency int32 = 2
+	scanDiagnosticLogLimit          = 0
+	scanDiagnosticLogTag            = "GATT_SCAN"
 )
 
 func init() {
@@ -39,6 +48,8 @@ type device struct {
 	scanCallbackObj     *jnipkg.Object
 	scanCallbackCleanup func()
 	scanCtxCancel       context.CancelFunc
+	scanDiagnosticsSeen map[string]struct{}
+	scanDiagnosticsLogs int
 
 	// Known peripherals by address (protected by mu).
 	peripherals map[string]*peripheral
@@ -189,6 +200,8 @@ func (d *device) Scan(
 		d.mu.Unlock()
 		return fmt.Errorf("already scanning")
 	}
+	d.scanDiagnosticsSeen = make(map[string]struct{})
+	d.scanDiagnosticsLogs = 0
 	d.mu.Unlock()
 
 	// Get the BLE scanner from the adapter.
@@ -239,8 +252,7 @@ func (d *device) Scan(
 		return err
 	}
 
-	// Start the scan.
-	if err := scanner.StartScan(callbackObj); err != nil {
+	if err := d.startScanWithSettings(ctx, scanner, callbackObj); err != nil {
 		scanCancel()
 		cleanup()
 		return fmt.Errorf("startScan: %w", err)
@@ -254,6 +266,140 @@ func (d *device) Scan(
 	d.mu.Unlock()
 
 	return nil
+}
+
+func (d *device) startScanWithSettings(
+	ctx context.Context,
+	scanner *le.BluetoothLeScanner,
+	callbackObj *jnipkg.Object,
+) error {
+	logger.Debugf(ctx, "starting Android BLE scan with explicit low-latency settings")
+
+	return d.vm.Do(func(env *jnipkg.Env) error {
+		filters, err := newEmptyArrayList(env)
+		if err != nil {
+			return fmt.Errorf("create empty scan filter list: %w", err)
+		}
+		defer env.DeleteLocalRef(filters)
+
+		settings, err := newLowLatencyScanSettings(env)
+		if err != nil {
+			return fmt.Errorf("create scan settings: %w", err)
+		}
+		defer env.DeleteLocalRef(settings)
+
+		scannerCls, err := env.FindClass("android/bluetooth/le/BluetoothLeScanner")
+		if err != nil {
+			return fmt.Errorf("find BluetoothLeScanner class: %w", err)
+		}
+		defer env.DeleteLocalRef(&scannerCls.Object)
+
+		startScan, err := env.GetMethodID(
+			scannerCls,
+			"startScan",
+			"(Ljava/util/List;Landroid/bluetooth/le/ScanSettings;Landroid/bluetooth/le/ScanCallback;)V",
+		)
+		if err != nil {
+			return fmt.Errorf("find BluetoothLeScanner.startScan overload: %w", err)
+		}
+
+		if err := env.CallVoidMethod(
+			scanner.Obj,
+			startScan,
+			jnipkg.ObjectValue(filters),
+			jnipkg.ObjectValue(settings),
+			jnipkg.ObjectValue(callbackObj),
+		); err != nil {
+			return fmt.Errorf("call BluetoothLeScanner.startScan overload: %w", err)
+		}
+		return nil
+	})
+}
+
+func newEmptyArrayList(env *jnipkg.Env) (*jnipkg.Object, error) {
+	listCls, err := env.FindClass("java/util/ArrayList")
+	if err != nil {
+		return nil, fmt.Errorf("find ArrayList class: %w", err)
+	}
+	defer env.DeleteLocalRef(&listCls.Object)
+
+	ctor, err := env.GetMethodID(listCls, "<init>", "()V")
+	if err != nil {
+		return nil, fmt.Errorf("find ArrayList constructor: %w", err)
+	}
+
+	listObj, err := env.NewObject(listCls, ctor)
+	if err != nil {
+		return nil, fmt.Errorf("construct ArrayList: %w", err)
+	}
+	return listObj, nil
+}
+
+func newLowLatencyScanSettings(env *jnipkg.Env) (*jnipkg.Object, error) {
+	builderCls, err := env.FindClass("android/bluetooth/le/ScanSettings$Builder")
+	if err != nil {
+		return nil, fmt.Errorf("find ScanSettings.Builder class: %w", err)
+	}
+	defer env.DeleteLocalRef(&builderCls.Object)
+
+	ctor, err := env.GetMethodID(builderCls, "<init>", "()V")
+	if err != nil {
+		return nil, fmt.Errorf("find ScanSettings.Builder constructor: %w", err)
+	}
+
+	builderObj, err := env.NewObject(builderCls, ctor)
+	if err != nil {
+		return nil, fmt.Errorf("construct ScanSettings.Builder: %w", err)
+	}
+	defer env.DeleteLocalRef(builderObj)
+
+	setScanMode, err := env.GetMethodID(
+		builderCls,
+		"setScanMode",
+		"(I)Landroid/bluetooth/le/ScanSettings$Builder;",
+	)
+	if err != nil {
+		return nil, fmt.Errorf("find ScanSettings.Builder.setScanMode: %w", err)
+	}
+	if err := callBuilderMethod(env, builderObj, setScanMode, jnipkg.IntValue(androidScanModeLowLatency)); err != nil {
+		return nil, fmt.Errorf("set scan mode: %w", err)
+	}
+
+	setReportDelay, err := env.GetMethodID(
+		builderCls,
+		"setReportDelay",
+		"(J)Landroid/bluetooth/le/ScanSettings$Builder;",
+	)
+	if err != nil {
+		return nil, fmt.Errorf("find ScanSettings.Builder.setReportDelay: %w", err)
+	}
+	if err := callBuilderMethod(env, builderObj, setReportDelay, jnipkg.LongValue(0)); err != nil {
+		return nil, fmt.Errorf("set report delay: %w", err)
+	}
+
+	build, err := env.GetMethodID(builderCls, "build", "()Landroid/bluetooth/le/ScanSettings;")
+	if err != nil {
+		return nil, fmt.Errorf("find ScanSettings.Builder.build: %w", err)
+	}
+
+	settingsObj, err := env.CallObjectMethod(builderObj, build)
+	if err != nil {
+		return nil, fmt.Errorf("build ScanSettings: %w", err)
+	}
+	return settingsObj, nil
+}
+
+func callBuilderMethod(
+	env *jnipkg.Env,
+	builderObj *jnipkg.Object,
+	method jnipkg.MethodID,
+	args ...jnipkg.Value,
+) error {
+	ret, err := env.CallObjectMethod(builderObj, method, args...)
+	if ret != nil {
+		env.DeleteLocalRef(ret)
+	}
+	return err
 }
 
 // handleScanCallback is invoked by the ScanCallback proxy for each scan event.
@@ -348,14 +494,98 @@ func (d *device) processScanResult(
 	}
 	d.mu.Unlock()
 
-	// Build a minimal Advertisement.
 	adv := &gatt.Advertisement{
 		LocalName: name,
 	}
+	scanRecordObj, err := sr.GetScanRecord()
+	if err != nil {
+		logger.Debugf(ctx, "scanResult.GetScanRecord failed: %v", err)
+	}
+	if scanRecordObj != nil {
+		defer env.DeleteGlobalRef(scanRecordObj)
+
+		scanRecord := &le.ScanRecord{
+			VM:  d.vm,
+			Obj: scanRecordObj,
+		}
+		rawObj, err := scanRecord.GetBytes()
+		if err != nil {
+			logger.Debugf(ctx, "scanRecord.GetBytes failed: %v", err)
+		}
+		if rawObj != nil {
+			raw := byteArrayToGoBytes(env, rawObj)
+			env.DeleteGlobalRef(rawObj)
+
+			parsedAdv, err := advertisementFromScanRecord(name, raw)
+			if err != nil {
+				logger.Debugf(ctx, "unable to parse raw scan record %X: %v", raw, err)
+			}
+			adv = parsedAdv
+		}
+	}
+	d.logScanDiagnostic(addr, name, int(rssi), adv)
 
 	handler := d.PeripheralDiscovered()
 	if handler != nil {
 		handler(ctx, p, adv, int(rssi))
+	}
+}
+
+func (d *device) logScanDiagnostic(
+	addr string,
+	name string,
+	rssi int,
+	adv *gatt.Advertisement,
+) {
+	if adv == nil {
+		return
+	}
+
+	interesting := scanDiagnosticIsInteresting(name, adv)
+	key := fmt.Sprintf("%s|%s|%X", addr, name, adv.ManufacturerData)
+
+	d.mu.Lock()
+	if _, ok := d.scanDiagnosticsSeen[key]; ok {
+		d.mu.Unlock()
+		return
+	}
+	if !interesting && d.scanDiagnosticsLogs >= scanDiagnosticLogLimit {
+		d.mu.Unlock()
+		return
+	}
+	d.scanDiagnosticsSeen[key] = struct{}{}
+	d.scanDiagnosticsLogs++
+	d.mu.Unlock()
+
+	logcatInfo(
+		scanDiagnosticLogTag,
+		fmt.Sprintf(
+			"scan-result addr=%s name=%q rssi=%d company=0x%04X manufacturer=%X",
+			addr,
+			name,
+			rssi,
+			adv.CompanyID,
+			adv.ManufacturerData,
+		),
+	)
+}
+
+func scanDiagnosticIsInteresting(
+	name string,
+	adv *gatt.Advertisement,
+) bool {
+	lowerName := strings.ToLower(name)
+	switch {
+	case strings.Contains(lowerName, "dji"):
+		return true
+	case strings.Contains(lowerName, "osmo"):
+		return true
+	case strings.Contains(lowerName, "pocket"):
+		return true
+	case bytes.HasPrefix(adv.ManufacturerData, []byte{0xAA, 0x08}):
+		return true
+	default:
+		return false
 	}
 }
 
@@ -590,4 +820,3 @@ var _ gatt.Peripheral = (*peripheral)(nil)
 
 // Ensure *device satisfies gatt.Device at compile time.
 var _ gatt.Device = (*device)(nil)
-

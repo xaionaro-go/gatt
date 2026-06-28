@@ -2418,7 +2418,15 @@ type Advertisement struct {
 	Raw              []byte
 }
 
-// This is only used in Linux port.
+// ParseAdvertisement parses raw BLE advertising data into an Advertisement.
+func ParseAdvertisement(b []byte) (*Advertisement, error) {
+	a := &Advertisement{}
+	if err := a.unmarshall(b); err != nil {
+		return nil, err
+	}
+	return a, nil
+}
+
 func (a *Advertisement) unmarshall(b []byte) error {
 
 	// Utility function for creating a list of uuids.

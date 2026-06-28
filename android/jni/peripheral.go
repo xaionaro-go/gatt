@@ -26,9 +26,9 @@ const (
 
 // Android BluetoothGattCharacteristic write type constants.
 const (
-	writeTypeDefault   int32 = 2
-	writeTypeNoResp    int32 = 1
-	writeTypeSigned    int32 = 4
+	writeTypeDefault int32 = 2
+	writeTypeNoResp  int32 = 1
+	writeTypeSigned  int32 = 4
 )
 
 // charReadResult bundles a characteristic read response.
@@ -313,6 +313,7 @@ func (p *peripheral) populateServices(
 					}
 
 					c.SetEndHandle(handle - 1)
+					addAndroidDiscoveredCharacteristicToService(s, c)
 				}
 			}
 
@@ -324,6 +325,13 @@ func (p *peripheral) populateServices(
 		return nil
 	})
 	return err
+}
+
+func addAndroidDiscoveredCharacteristicToService(
+	service *gatt.Service,
+	characteristic *gatt.Characteristic,
+) {
+	service.SetCharacteristics(append(service.Characteristics(), characteristic))
 }
 
 func (p *peripheral) DiscoverIncludedServices(
@@ -905,12 +913,12 @@ func (p *peripheral) dispatchNotification(
 		return
 	}
 
-	// Match by iterating over known characteristic objects and comparing refs.
+	// Match by iterating over known characteristic objects and comparing object identity.
 	p.mu.Lock()
 	var matchedVH uint16
 	var matchedChar *gatt.Characteristic
 	for vh, obj := range p.charObjs {
-		if obj.Ref() == args[1].Ref() {
+		if env.IsSameObject(obj, args[1]) {
 			matchedVH = vh
 			matchedChar = p.charByVH[vh]
 			break

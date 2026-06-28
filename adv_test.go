@@ -1,6 +1,9 @@
 package gatt
 
-import "testing"
+import (
+	"bytes"
+	"testing"
+)
 
 // TODO:
 func TestAppendField(t *testing.T) {}
@@ -49,6 +52,36 @@ func TestAppendName(t *testing.T) {
 
 // TODO:
 func TestAppendManufacturerData(t *testing.T) {}
+
+func TestParseAdvertisementPopulatesNameAndManufacturerData(t *testing.T) {
+	raw := []byte{
+		0x02, typeFlags, 0x06,
+		0x0C, typeCompleteName, 'O', 's', 'm', 'o', 'P', 'o', 'c', 'k', 'e', 't', '3',
+		0x05, typeManufacturerData, 0xAA, 0x08, 0x20, 0x00,
+	}
+
+	adv, err := ParseAdvertisement(raw)
+	if err != nil {
+		t.Fatalf("ParseAdvertisement(%X) returned error: %v", raw, err)
+	}
+	if adv.LocalName != "OsmoPocket3" {
+		t.Fatalf("ParseAdvertisement(%X) local name = %q, want %q", raw, adv.LocalName, "OsmoPocket3")
+	}
+	if got, want := adv.CompanyID, uint16(0x08AA); got != want {
+		t.Fatalf("ParseAdvertisement(%X) company ID = 0x%04X, want 0x%04X", raw, got, want)
+	}
+	if got, want := adv.ManufacturerData, []byte{0xAA, 0x08, 0x20, 0x00}; !bytes.Equal(got, want) {
+		t.Fatalf("ParseAdvertisement(%X) manufacturer data = %X, want %X", raw, got, want)
+	}
+}
+
+func TestParseAdvertisementRejectsMalformedField(t *testing.T) {
+	raw := []byte{0x05, typeManufacturerData, 0xAA}
+
+	if _, err := ParseAdvertisement(raw); err == nil {
+		t.Fatalf("ParseAdvertisement(%X) returned nil error, want malformed advertisement error", raw)
+	}
+}
 
 // TODO:
 func TestAppendUUIDFit(t *testing.T) {

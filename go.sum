@@ -1,9 +1,9 @@
 github.com/AndroidGoLab/binder v0.0.7 h1:VT5jaLEQC9GcLtoQJBL4faUFCcwmS7LZeI6FEps0EsQ=
 github.com/AndroidGoLab/binder v0.0.7/go.mod h1:yG7k24VZY0pNgOaodLMEcgRGARFXxDufNLCNbHl08tg=
-github.com/AndroidGoLab/jni v0.0.7 h1:uzaGWOoT8QF2o4e1X2b/RDqjY908tl2yqk3uYvtANoU=
-github.com/AndroidGoLab/jni v0.0.7/go.mod h1:XBzHyh8nY2HjayaaVaDVxJ6CYEVt4yFVntzkypwkGQo=
-github.com/AndroidGoLab/jni-proxy v0.0.6-0.20260328182641-74b6a6bf90b9 h1:0kaMNmaXkVU/HO7cGPTFr3HW320tRaPmLAxkrWbXLGw=
-github.com/AndroidGoLab/jni-proxy v0.0.6-0.20260328182641-74b6a6bf90b9/go.mod h1:xB6VkeAFpbWjO7WdVMtMDx/PyyKPmWcELp+RpCmiKDI=
+github.com/AndroidGoLab/jni v0.0.8-0.20260329170426-daf758e725d5 h1:kwWGdGQThLoVkYxowTlrt78SKQl11A8pJ3y5OnRdqyI=
+github.com/AndroidGoLab/jni v0.0.8-0.20260329170426-daf758e725d5/go.mod h1:XBzHyh8nY2HjayaaVaDVxJ6CYEVt4yFVntzkypwkGQo=
+github.com/AndroidGoLab/jni-proxy v0.0.6-0.20260329115737-9885c8ceb93b h1:kwQOlHGdPC3M+yPSgmli83ewaDzc2+WS1VS/XjYL19M=
+github.com/AndroidGoLab/jni-proxy v0.0.6-0.20260329115737-9885c8ceb93b/go.mod h1:xB6VkeAFpbWjO7WdVMtMDx/PyyKPmWcELp+RpCmiKDI=
 github.com/DataDog/gostackparse v0.7.0 h1:i7dLkXHvYzHV308hnkvVGDL3BR4FWl7IsXNPz/IGQh4=
 github.com/DataDog/gostackparse v0.7.0/go.mod h1:lTfqcJKqS9KnXQGnyQMCugq3u1FP6UZMfWR0aitKFMM=
 github.com/cespare/xxhash/v2 v2.3.0 h1:UL815xU9SqsFlibzuggzjXhog7bL6oX9BbNZnL2UFvs=

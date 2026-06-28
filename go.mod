@@ -4,8 +4,8 @@ go 1.25.0
 
 require (
 	github.com/AndroidGoLab/binder v0.0.7
-	github.com/AndroidGoLab/jni v0.0.7
-	github.com/AndroidGoLab/jni-proxy v0.0.6-0.20260328182641-74b6a6bf90b9
+	github.com/AndroidGoLab/jni v0.0.8-0.20260329170426-daf758e725d5
+	github.com/AndroidGoLab/jni-proxy v0.0.6-0.20260329115737-9885c8ceb93b
 	github.com/facebookincubator/go-belt v0.0.0-20250308011339-62fb7027b11f
 	github.com/xaionaro-go/ctxflow v0.0.0-20250530224412-dee18b630ad7
 	golang.org/x/sys v0.42.0
