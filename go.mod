@@ -8,6 +8,7 @@ require (
 	github.com/AndroidGoLab/jni-proxy v0.0.6-0.20260329115737-9885c8ceb93b
 	github.com/facebookincubator/go-belt v0.0.0-20250308011339-62fb7027b11f
 	github.com/xaionaro-go/ctxflow v0.0.0-20250530224412-dee18b630ad7
+	github.com/xaionaro-go/observability v0.0.0-20250525153415-e6c2d935ab34
 	golang.org/x/sys v0.42.0
 	google.golang.org/grpc v1.79.2
 )
@@ -28,7 +29,6 @@ require (
 	github.com/xaionaro-go/gorex v0.0.0-20241010205749-bcd59d639c4d // indirect
 	github.com/xaionaro-go/logrustash v0.0.0-20240804141650-d48034780a5f // indirect
 	github.com/xaionaro-go/object v0.0.0-20241026212449-753ce10ec94c // indirect
-	github.com/xaionaro-go/observability v0.0.0-20250525153415-e6c2d935ab34 // indirect
 	github.com/xaionaro-go/spinlock v0.0.0-20200518175509-30e6d1ce68a1 // indirect
 	github.com/xaionaro-go/unsafetools v0.0.0-20241024014258-a46e1ce3763e // indirect
 	github.com/xaionaro-go/xsync v0.0.0-20250511184922-deec5fb01a0f // indirect

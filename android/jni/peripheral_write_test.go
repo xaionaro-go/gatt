@@ -57,7 +57,7 @@ func TestPeripheralCharacteristicWriteCancelRejectsLaterWritesAndLateCallback(t 
 	_, err = p.beginCharacteristicWrite()
 	switch {
 	case err == nil:
-		t.Fatalf("beginCharacteristicWrite returned nil error after write timeout")
+		t.Fatalf("beginCharacteristicWrite returned nil error after write cancellation")
 	case !strings.Contains(err.Error(), "previous characteristic write did not complete"):
 		t.Fatalf("beginCharacteristicWrite returned %q, want previous-write failure", err)
 	}

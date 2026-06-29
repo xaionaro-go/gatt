@@ -2,6 +2,7 @@ package jni
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"unsafe"
@@ -96,14 +97,24 @@ func (n *serverNotifier) Write(data []byte) (int, error) {
 		return 0, err
 	}
 
-	ok, err := n.gs.server.NotifyCharacteristicChanged3(
-		n.c.btDev.Obj, n.charObj, n.confirm,
+	err = n.c.withBluetoothDeviceObject(
+		func(deviceObj *jnipkg.Object) error {
+			ok, err := n.gs.server.NotifyCharacteristicChanged3(
+				deviceObj,
+				n.charObj,
+				n.confirm,
+			)
+			if err != nil {
+				return fmt.Errorf("notifyCharacteristicChanged: %w", err)
+			}
+			if !ok {
+				return fmt.Errorf("notifyCharacteristicChanged returned false")
+			}
+			return nil
+		},
 	)
 	if err != nil {
-		return 0, fmt.Errorf("notifyCharacteristicChanged: %w", err)
-	}
-	if !ok {
-		return 0, fmt.Errorf("notifyCharacteristicChanged returned false")
+		return 0, err
 	}
 
 	return len(data), nil
@@ -128,6 +139,67 @@ func (n *serverNotifier) stop() {
 // notifierKey builds a map key for a notifier from characteristic UUID and central address.
 func notifierKey(charUUID string, centralAddr string) string {
 	return charUUID + ":" + centralAddr
+}
+
+func (gs *gattServerState) rememberConnectedCentral(
+	c *central,
+) error {
+	gs.mu.Lock()
+	if gs.centrals == nil {
+		gs.centrals = make(map[string]*central)
+	}
+	previous := gs.centrals[c.addr]
+	gs.centrals[c.addr] = c
+	gs.mu.Unlock()
+
+	if previous == nil || previous == c {
+		return nil
+	}
+	if err := previous.Close(); err != nil {
+		return fmt.Errorf("close replaced central %s: %w", c.addr, err)
+	}
+	return nil
+}
+
+func (gs *gattServerState) disconnectCentral(
+	addr string,
+) (*central, bool, error) {
+	gs.mu.Lock()
+	c, exists := gs.centrals[addr]
+	delete(gs.centrals, addr)
+	for key, n := range gs.notifiers {
+		if n.c.addr == addr {
+			n.stop()
+			delete(gs.notifiers, key)
+		}
+	}
+	gs.mu.Unlock()
+
+	if !exists {
+		return nil, false, nil
+	}
+	if err := c.Close(); err != nil {
+		return c, true, fmt.Errorf("close disconnected central %s: %w", addr, err)
+	}
+	return c, true, nil
+}
+
+func (gs *gattServerState) closeCentrals() error {
+	gs.mu.Lock()
+	centrals := make([]*central, 0, len(gs.centrals))
+	for _, c := range gs.centrals {
+		centrals = append(centrals, c)
+	}
+	gs.centrals = make(map[string]*central)
+	gs.mu.Unlock()
+
+	var errs []error
+	for _, c := range centrals {
+		if err := c.Close(); err != nil {
+			errs = append(errs, fmt.Errorf("close central %s: %w", c.ID(), err))
+		}
+	}
+	return errors.Join(errs...)
 }
 
 // openGattServer creates the BluetoothGattServer and registers all services.
@@ -268,6 +340,10 @@ func (d *device) closeGattServer() {
 	}
 	gs.notifiers = make(map[string]*serverNotifier)
 	gs.mu.Unlock()
+
+	if err := gs.closeCentrals(); err != nil {
+		logger.Warnf(context.Background(), "closing GATT server centrals: %v", err)
+	}
 
 	// Delete characteristic JNI global refs.
 	_ = d.vm.Do(func(env *jnipkg.Env) error {
@@ -533,6 +609,9 @@ func (d *device) handleServerConnectionStateChange(
 	btDev := &bluetooth.Device{VM: d.vm, Obj: env.NewGlobalRef(args[0])}
 	addr, err := btDev.GetAddress()
 	if err != nil {
+		if releaseErr := d.deleteGlobalRef(btDev.Obj); releaseErr != nil {
+			logger.Warnf(ctx, "onConnectionStateChange: release BluetoothDevice global ref failed: %v", releaseErr)
+		}
 		logger.Warnf(ctx, "onConnectionStateChange: getAddress failed: %v", err)
 		return
 	}
@@ -540,9 +619,9 @@ func (d *device) handleServerConnectionStateChange(
 	switch newState {
 	case stateConnected:
 		c := newCentral(d, btDev, addr)
-		gs.mu.Lock()
-		gs.centrals[addr] = c
-		gs.mu.Unlock()
+		if err := gs.rememberConnectedCentral(c); err != nil {
+			logger.Warnf(ctx, "onConnectionStateChange: %v", err)
+		}
 
 		handler := d.CentralConnected()
 		if handler != nil {
@@ -552,24 +631,15 @@ func (d *device) handleServerConnectionStateChange(
 		}
 
 	case stateDisconnected:
-		gs.mu.Lock()
-		c, exists := gs.centrals[addr]
-		delete(gs.centrals, addr)
-
-		// Stop any notifiers for this central.
-		for key, n := range gs.notifiers {
-			if n.c.addr == addr {
-				n.stop()
-				delete(gs.notifiers, key)
-			}
+		c, exists, err := gs.disconnectCentral(addr)
+		if err != nil {
+			logger.Warnf(ctx, "onConnectionStateChange: %v", err)
 		}
-		gs.mu.Unlock()
 
 		// Release the btDev global ref we just created (we used it only to get the address).
-		_ = d.vm.Do(func(env *jnipkg.Env) error {
-			env.DeleteGlobalRef(btDev.Obj)
-			return nil
-		})
+		if err := d.deleteGlobalRef(btDev.Obj); err != nil {
+			logger.Warnf(ctx, "onConnectionStateChange: release BluetoothDevice global ref failed: %v", err)
+		}
 
 		if exists {
 			handler := d.CentralDisconnected()
@@ -582,10 +652,9 @@ func (d *device) handleServerConnectionStateChange(
 
 	default:
 		// Transitional state — release the global ref.
-		_ = d.vm.Do(func(env *jnipkg.Env) error {
-			env.DeleteGlobalRef(btDev.Obj)
-			return nil
-		})
+		if err := d.deleteGlobalRef(btDev.Obj); err != nil {
+			logger.Warnf(ctx, "onConnectionStateChange: release BluetoothDevice global ref failed: %v", err)
+		}
 	}
 }
 

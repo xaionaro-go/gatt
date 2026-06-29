@@ -103,12 +103,21 @@ func (d *device) Start(
 	}
 	d.adapter = adapter
 
-	d.state = gatt.StatePoweredOn
+	initialState := gatt.StatePoweredOn
+	d.state = initialState
 	d.SetStateChanged(stateChanged)
 	observability.Go(ctx, func(ctx context.Context) {
-		stateChanged(ctx, d, d.state)
+		d.notifyStateChanged(ctx, stateChanged, initialState)
 	})
 	return nil
+}
+
+func (d *device) notifyStateChanged(
+	ctx context.Context,
+	stateChanged func(context.Context, gatt.Device, gatt.State),
+	state gatt.State,
+) {
+	stateChanged(ctx, d, state)
 }
 
 func (d *device) Stop() error {
