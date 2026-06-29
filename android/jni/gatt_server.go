@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"unsafe"
 
@@ -141,6 +142,27 @@ func notifierKey(charUUID string, centralAddr string) string {
 	return charUUID + ":" + centralAddr
 }
 
+func (gs *gattServerState) popNotifiersForCentralAddressLocked(
+	addr string,
+) []*serverNotifier {
+	var result []*serverNotifier
+	keySuffix := ":" + addr
+	for key, n := range gs.notifiers {
+		switch {
+		case n != nil && n.c != nil && n.c.addr == addr:
+		case strings.HasSuffix(key, keySuffix):
+		default:
+			continue
+		}
+
+		delete(gs.notifiers, key)
+		if n != nil {
+			result = append(result, n)
+		}
+	}
+	return result
+}
+
 func (gs *gattServerState) rememberConnectedCentral(
 	c *central,
 ) error {
@@ -150,8 +172,15 @@ func (gs *gattServerState) rememberConnectedCentral(
 	}
 	previous := gs.centrals[c.addr]
 	gs.centrals[c.addr] = c
+	var staleNotifiers []*serverNotifier
+	if previous != nil && previous != c {
+		staleNotifiers = gs.popNotifiersForCentralAddressLocked(c.addr)
+	}
 	gs.mu.Unlock()
 
+	for _, n := range staleNotifiers {
+		n.stop()
+	}
 	if previous == nil || previous == c {
 		return nil
 	}
@@ -167,14 +196,12 @@ func (gs *gattServerState) disconnectCentral(
 	gs.mu.Lock()
 	c, exists := gs.centrals[addr]
 	delete(gs.centrals, addr)
-	for key, n := range gs.notifiers {
-		if n.c.addr == addr {
-			n.stop()
-			delete(gs.notifiers, key)
-		}
-	}
+	staleNotifiers := gs.popNotifiersForCentralAddressLocked(addr)
 	gs.mu.Unlock()
 
+	for _, n := range staleNotifiers {
+		n.stop()
+	}
 	if !exists {
 		return nil, false, nil
 	}

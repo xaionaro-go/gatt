@@ -51,6 +51,88 @@ func TestGattServerStateConnectedCentralClosesDuplicateOutsideLock(t *testing.T)
 	}
 }
 
+func TestGattServerStateConnectedCentralRemovesStaleNotifiersForDuplicateAddress(t *testing.T) {
+	addr := "04:A8:5A:58:60:95"
+	oldCloseCount := 0
+	newCloseCount := 0
+	gs := &gattServerState{
+		centrals:  make(map[string]*central),
+		notifiers: make(map[string]*serverNotifier),
+	}
+	oldCentral := newTestCentral(t, gs, addr, &oldCloseCount)
+	replacementCentral := newTestCentral(t, gs, addr, &newCloseCount)
+	gs.centrals[addr] = oldCentral
+
+	notifierByCentral := &serverNotifier{c: oldCentral}
+	notifierByKeySuffix := &serverNotifier{c: &central{addr: "other"}}
+	unrelatedNotifier := &serverNotifier{c: &central{addr: "other"}}
+	gs.notifiers[notifierKey("primary", addr)] = notifierByCentral
+	gs.notifiers["legacy:"+addr] = notifierByKeySuffix
+	gs.notifiers[notifierKey("primary", "other")] = unrelatedNotifier
+
+	if err := gs.rememberConnectedCentral(replacementCentral); err != nil {
+		t.Fatalf("rememberConnectedCentral returned error: %v", err)
+	}
+
+	if oldCloseCount != 1 {
+		t.Fatalf("old central close count = %d, want 1", oldCloseCount)
+	}
+	if newCloseCount != 0 {
+		t.Fatalf("new central close count = %d, want 0", newCloseCount)
+	}
+	if got := gs.centrals[addr]; got != replacementCentral {
+		t.Fatalf("stored central = %p, want %p", got, replacementCentral)
+	}
+	if _, ok := gs.notifiers[notifierKey("primary", addr)]; ok {
+		t.Fatalf("duplicate replacement left notifier matched by central address")
+	}
+	if _, ok := gs.notifiers["legacy:"+addr]; ok {
+		t.Fatalf("duplicate replacement left notifier matched by key suffix")
+	}
+	if !notifierByCentral.Done() {
+		t.Fatalf("duplicate replacement did not stop notifier matched by central address")
+	}
+	if !notifierByKeySuffix.Done() {
+		t.Fatalf("duplicate replacement did not stop notifier matched by key suffix")
+	}
+	if _, ok := gs.notifiers[notifierKey("primary", "other")]; !ok {
+		t.Fatalf("duplicate replacement removed unrelated notifier")
+	}
+	if unrelatedNotifier.Done() {
+		t.Fatalf("duplicate replacement stopped unrelated notifier")
+	}
+}
+
+func TestGattServerStateConnectedCentralNoopForSameCentral(t *testing.T) {
+	addr := "04:A8:5A:58:60:95"
+	closeCount := 0
+	gs := &gattServerState{
+		centrals:  make(map[string]*central),
+		notifiers: make(map[string]*serverNotifier),
+	}
+	c := newTestCentral(t, gs, addr, &closeCount)
+	gs.centrals[addr] = c
+	activeNotifier := &serverNotifier{c: c}
+	gs.notifiers[notifierKey("primary", addr)] = activeNotifier
+
+	if err := gs.rememberConnectedCentral(c); err != nil {
+		t.Fatalf("rememberConnectedCentral returned error: %v", err)
+	}
+
+	if closeCount != 0 {
+		t.Fatalf("central close count = %d, want 0", closeCount)
+	}
+	if got := gs.centrals[addr]; got != c {
+		t.Fatalf("stored central = %p, want %p", got, c)
+	}
+	if got := gs.notifiers[notifierKey("primary", addr)]; got != activeNotifier {
+		t.Fatalf("same-central reconnect changed notifier = %p, want %p", got, activeNotifier)
+	}
+	if activeNotifier.Done() {
+		t.Fatalf("same-central reconnect stopped existing notifier")
+	}
+}
+
 func TestGattServerStateDisconnectCentralClosesRemovedCentralAndStopsNotifiers(t *testing.T) {
 	addr := "04:A8:5A:58:60:95"
 	closeCount := 0
