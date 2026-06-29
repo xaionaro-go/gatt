@@ -11,6 +11,7 @@ import (
 	jnipkg "github.com/AndroidGoLab/jni"
 	"github.com/AndroidGoLab/jni/bluetooth"
 	"github.com/xaionaro-go/gatt"
+	"github.com/xaionaro-go/observability"
 )
 
 // gattStatus constants from Android BluetoothGatt.
@@ -811,6 +812,7 @@ func (p *peripheral) SetMTU(
 // handleGattCallback dispatches GATT callback events from the Java side
 // to the appropriate synchronization channels.
 func (p *peripheral) handleGattCallback(
+	ctx context.Context,
 	env *jnipkg.Env,
 	methodName string,
 	args []*jnipkg.Object,
@@ -904,7 +906,7 @@ func (p *peripheral) handleGattCallback(
 				env.DeleteGlobalRef(valObj)
 			}
 		}
-		p.dispatchNotification(env, args, data)
+		p.dispatchNotification(ctx, env, args, data)
 
 	case "onDescriptorRead":
 		// args: gatt, descriptor, status
@@ -983,6 +985,7 @@ func (p *peripheral) handleGattCallback(
 // dispatchNotification finds the subscriber for a changed characteristic
 // and calls the callback.
 func (p *peripheral) dispatchNotification(
+	ctx context.Context,
 	env *jnipkg.Env,
 	args []*jnipkg.Object,
 	data []byte,
@@ -1006,6 +1009,9 @@ func (p *peripheral) dispatchNotification(
 	p.mu.Unlock()
 
 	if fn != nil && matchedChar != nil {
-		go fn(matchedChar, data, nil)
+		notificationData := append([]byte(nil), data...)
+		observability.Go(ctx, func(ctx context.Context) {
+			fn(matchedChar, notificationData, nil)
+		})
 	}
 }

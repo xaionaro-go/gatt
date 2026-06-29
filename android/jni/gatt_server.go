@@ -11,6 +11,7 @@ import (
 	jnipkg "github.com/AndroidGoLab/jni"
 	"github.com/AndroidGoLab/jni/bluetooth"
 	"github.com/xaionaro-go/gatt"
+	"github.com/xaionaro-go/observability"
 )
 
 // Android GATT server response status constants.
@@ -545,7 +546,9 @@ func (d *device) handleServerConnectionStateChange(
 
 		handler := d.CentralConnected()
 		if handler != nil {
-			go handler(ctx, c)
+			observability.Go(ctx, func(ctx context.Context) {
+				handler(ctx, c)
+			})
 		}
 
 	case stateDisconnected:
@@ -571,7 +574,9 @@ func (d *device) handleServerConnectionStateChange(
 		if exists {
 			handler := d.CentralDisconnected()
 			if handler != nil {
-				go handler(ctx, c)
+				observability.Go(ctx, func(ctx context.Context) {
+					handler(ctx, c)
+				})
 			}
 		}
 
@@ -827,7 +832,10 @@ func (d *device) handleCCCDWrite(
 		// Call the characteristic's NotifyHandler.
 		nh := c.GetNotifyHandler()
 		if nh != nil {
-			go nh.ServeNotify(ctx, gatt.Request{Central: cent}, n)
+			req := gatt.Request{Central: cent}
+			observability.Go(ctx, func(ctx context.Context) {
+				nh.ServeNotify(ctx, req, n)
+			})
 		}
 	}
 }

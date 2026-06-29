@@ -105,7 +105,9 @@ func (d *device) Start(
 
 	d.state = gatt.StatePoweredOn
 	d.SetStateChanged(stateChanged)
-	go stateChanged(ctx, d, d.state)
+	observability.Go(ctx, func(ctx context.Context) {
+		stateChanged(ctx, d, d.state)
+	})
 	return nil
 }
 
@@ -749,7 +751,9 @@ func (d *device) Connect(ctx context.Context, p gatt.Peripheral) {
 
 		proxy, proxyCleanup, err := env.NewProxy(
 			[]*jnipkg.Class{cls},
-			per.handleGattCallback,
+			func(env *jnipkg.Env, methodName string, args []*jnipkg.Object) (*jnipkg.Object, error) {
+				return per.handleGattCallback(ctx, env, methodName, args)
+			},
 		)
 		if err != nil {
 			return fmt.Errorf("create BluetoothGattCallback proxy: %w", err)

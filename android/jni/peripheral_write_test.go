@@ -5,7 +5,6 @@ import (
 	"errors"
 	"strings"
 	"testing"
-	"time"
 )
 
 func TestPeripheralWaitForCharacteristicWriteConsumesAndroidCallback(t *testing.T) {
@@ -39,19 +38,18 @@ func TestPeripheralWaitForCharacteristicWriteReturnsAndroidCallbackError(t *test
 	}
 }
 
-func TestPeripheralCharacteristicWriteTimeoutRejectsLaterWritesAndLateCallback(t *testing.T) {
+func TestPeripheralCharacteristicWriteCancelRejectsLaterWritesAndLateCallback(t *testing.T) {
 	p := newPeripheral(nil, nil, "", "")
 	writeCompleted, err := p.beginCharacteristicWrite()
 	if err != nil {
 		t.Fatalf("beginCharacteristicWrite returned error: %v", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Nanosecond)
-	defer cancel()
-	<-ctx.Done()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
 
-	if err := p.waitForCharacteristicWrite(ctx, writeCompleted); !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("waitForCharacteristicWrite returned %v, want context deadline", err)
+	if err := p.waitForCharacteristicWrite(ctx, writeCompleted); !errors.Is(err, context.Canceled) {
+		t.Fatalf("waitForCharacteristicWrite returned %v, want context cancellation", err)
 	}
 
 	p.handleCharacteristicWrite(nil)
